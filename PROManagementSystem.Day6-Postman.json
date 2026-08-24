@@ -1,0 +1,143 @@
+{
+  "info": {
+    "name": "PRO Management System - Day 6 Endpoints",
+    "description": "New endpoints added in Day 6: Audit Log, Dashboard, Service Report, Change Password, Hangfire Jobs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://localhost:7001" },
+    { "key": "clientId", "value": "" },
+    { "key": "entityId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Audit Log",
+      "item": [
+        {
+          "name": "Get Audit Log (Admin)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/audit-log?page=1&pageSize=20", "host": ["{{baseUrl}}"], "path": ["api", "v1", "audit-log"], "query": [
+              { "key": "page", "value": "1" },
+              { "key": "pageSize", "value": "20" },
+              { "key": "entityType", "value": "", "disabled": true },
+              { "key": "userId", "value": "", "disabled": true },
+              { "key": "from", "value": "", "disabled": true },
+              { "key": "to", "value": "", "disabled": true }
+            ]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Summary",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/dashboard/summary", "host": ["{{baseUrl}}"], "path": ["api", "v1", "dashboard", "summary"] }
+          }
+        },
+        {
+          "name": "Get Staff Workload",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/dashboard/staff-workload", "host": ["{{baseUrl}}"], "path": ["api", "v1", "dashboard", "staff-workload"] }
+          }
+        },
+        {
+          "name": "Get Activity Feed",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/dashboard/activity-feed?page=1&pageSize=20", "host": ["{{baseUrl}}"], "path": ["api", "v1", "dashboard", "activity-feed"], "query": [
+              { "key": "page", "value": "1" },
+              { "key": "pageSize", "value": "20" }
+            ]}
+          }
+        },
+        {
+          "name": "Get Revenue (Admin)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/dashboard/revenue?period=month", "host": ["{{baseUrl}}"], "path": ["api", "v1", "dashboard", "revenue"], "query": [
+              { "key": "period", "value": "month" }
+            ]}
+          }
+        },
+        {
+          "name": "Get Expiring Documents",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/dashboard/expiry-alerts/documents?days=90", "host": ["{{baseUrl}}"], "path": ["api", "v1", "dashboard", "expiry-alerts", "documents"], "query": [
+              { "key": "days", "value": "90" }
+            ]}
+          }
+        },
+        {
+          "name": "Get Expiring Employees",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/dashboard/expiry-alerts/employees?days=90", "host": ["{{baseUrl}}"], "path": ["api", "v1", "dashboard", "expiry-alerts", "employees"], "query": [
+              { "key": "days", "value": "90" }
+            ]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "Client Service Report",
+      "item": [
+        {
+          "name": "Get Service Report (JSON)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/admin/clients/{{clientId}}/service-report", "host": ["{{baseUrl}}"], "path": ["api", "v1", "admin", "clients", "{{clientId}}", "service-report"] }
+          }
+        },
+        {
+          "name": "Get Service Report (PDF)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/admin/clients/{{clientId}}/service-report/pdf", "host": ["{{baseUrl}}"], "path": ["api", "v1", "admin", "clients", "{{clientId}}", "service-report", "pdf"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"\",\n  \"newPassword\": \"\",\n  \"confirmPassword\": \"\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/users/change-password", "host": ["{{baseUrl}}"], "path": ["api", "v1", "users", "change-password"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Jobs",
+      "item": [
+        {
+          "name": "Run Expiry Check (Admin)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/v1/admin/jobs/run-expiry-check", "host": ["{{baseUrl}}"], "path": ["api", "v1", "admin", "jobs", "run-expiry-check"] }
+          }
+        }
+      ]
+    }
+  ]
+}

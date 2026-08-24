@@ -1,0 +1,25 @@
+using PROManagementSystem.Domain.Enums;
+
+namespace PROManagementSystem.Application.RetainerInvoices.Queries.GetRetainerInvoiceById;
+
+public sealed record GetRetainerInvoiceByIdResponseDto(
+    Guid Id,
+    Guid ClientCompanyId,
+    string ClientCompanyName,
+    Guid ServiceContractId,
+    string ContractNumber,
+    string InvoiceNumber,
+    DateTime InvoiceDate,
+    DateTime DueDate,
+    DateTime? PeriodStart,
+    DateTime? PeriodEnd,
+    decimal Amount,
+    string Currency,
+    RetainerInvoiceStatus Status,
+    string? Notes,
+    DateTime? PaidAt,
+    DateTime? VoidedAt,
+    string? VoidReason,
+    DateTime CreatedAt,
+    DateTime UpdatedAt
+);

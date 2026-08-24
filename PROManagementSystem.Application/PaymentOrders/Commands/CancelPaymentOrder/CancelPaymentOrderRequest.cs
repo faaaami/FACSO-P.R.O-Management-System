@@ -1,0 +1,3 @@
+namespace PROManagementSystem.Application.PaymentOrders.Commands.CancelPaymentOrder;
+
+public sealed record CancelPaymentOrderRequest;

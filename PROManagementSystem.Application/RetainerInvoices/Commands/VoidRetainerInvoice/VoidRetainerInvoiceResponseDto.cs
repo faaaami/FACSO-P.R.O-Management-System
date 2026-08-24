@@ -1,0 +1,23 @@
+using PROManagementSystem.Domain.Enums;
+
+namespace PROManagementSystem.Application.RetainerInvoices.Commands.VoidRetainerInvoice;
+
+public sealed record VoidRetainerInvoiceResponseDto(
+    Guid Id,
+    Guid ClientCompanyId,
+    Guid ServiceContractId,
+    string InvoiceNumber,
+    DateTime InvoiceDate,
+    DateTime DueDate,
+    DateTime? PeriodStart,
+    DateTime? PeriodEnd,
+    decimal Amount,
+    string Currency,
+    RetainerInvoiceStatus Status,
+    string? Notes,
+    DateTime? PaidAt,
+    DateTime? VoidedAt,
+    string? VoidReason,
+    DateTime CreatedAt,
+    DateTime UpdatedAt
+);

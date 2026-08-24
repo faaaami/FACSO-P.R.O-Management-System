@@ -1,0 +1,14 @@
+﻿using FluentValidation;
+
+namespace PROManagementSystem.Application.Auth.Commands.RefreshToken;
+
+public sealed class RefreshTokenCommandValidator
+    : AbstractValidator<RefreshTokenCommand>
+{
+    public RefreshTokenCommandValidator()
+    {
+        RuleFor(x => x.RefreshToken)
+            .NotEmpty()
+            .WithMessage("Refresh token is required.");
+    }
+}

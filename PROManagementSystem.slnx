@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="PROManagementSystem.Application/PROManagementSystem.Application.csproj" />
+  <Project Path="PROManagementSystem.Domain/PROManagementSystem.Domain.csproj" />
+  <Project Path="PROManagementSystem.Infrastructure/PROManagementSystem.Infrastructure.csproj" />
+  <Project Path="PROManagementSystem/PROManagementSystem.Api.csproj" />
+</Solution>
