@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.DomainEvents;
 using PROManagementSystem.Application.Common.Exceptions;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Common.Realtime;
 using PROManagementSystem.Domain.Entities;
 using PROManagementSystem.Domain.Enums;
 
@@ -16,6 +17,7 @@ public sealed class UpdateRenewalTaskStatusCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IPublisher _publisher;
+    private readonly IRealtimeNotificationService _realtime;
 
     private static readonly Dictionary<RenewalTaskStatus, RenewalTaskStatus> AllowedTransitions = new()
     {
@@ -37,11 +39,13 @@ public sealed class UpdateRenewalTaskStatusCommandHandler
     public UpdateRenewalTaskStatusCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUser,
-        IPublisher publisher)
+        IPublisher publisher,
+        IRealtimeNotificationService realtime)
     {
         _context = context;
         _currentUser = currentUser;
         _publisher = publisher;
+        _realtime = realtime;
     }
 
     public async Task<UpdateRenewalTaskStatusResponseDto> Handle(
@@ -250,6 +254,31 @@ public sealed class UpdateRenewalTaskStatusCommandHandler
         };
         _context.AuditLogs.Add(auditLog);
 
+        // =========================================================
+        // 9b. Persist a notification for the assigned agent
+        // =========================================================
+
+        if (task.AssignedStaffId.HasValue)
+        {
+            var statusNotification = new Notification
+            {
+                Id = Guid.NewGuid(),
+                UserId = task.AssignedStaffId.Value,
+                Title = "Task status changed",
+                Message =
+                    $"TaskStatusChanged | TaskId:{task.Id} | " +
+                    $"Status changed from {previousStatus} to {targetStatus}.",
+                IsRead = false,
+                ReadAt = null,
+                CreatedAt = task.UpdatedAt,
+                UpdatedAt = task.UpdatedAt,
+                IsDeleted = false,
+                DeletedAt = null
+            };
+
+            _context.Notifications.Add(statusNotification);
+        }
+
 
         // =========================================================
         // 10. Save task + history
@@ -270,6 +299,26 @@ public sealed class UpdateRenewalTaskStatusCommandHandler
                 new RenewalTaskCompletedEvent(
                     task.Id,
                     task.ClientCompanyId),
+                cancellationToken);
+        }
+
+
+        // =========================================================
+        // 11b. Send SignalR TaskStatusChanged event to the assigned agent
+        // =========================================================
+
+        if (task.AssignedStaffId.HasValue)
+        {
+            var statusChanged =
+                new TaskStatusChangedEvent(
+                    task.Id,
+                    task.AssignedStaffId.Value,
+                    previousStatus,
+                    targetStatus,
+                    task.UpdatedAt);
+
+            await _realtime.SendTaskStatusChangedAsync(
+                statusChanged,
                 cancellationToken);
         }
 

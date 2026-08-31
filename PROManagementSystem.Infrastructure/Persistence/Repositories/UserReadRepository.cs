@@ -30,7 +30,7 @@ public sealed class UserReadRepository : IUserReadRepository
         client_company_id AS ClientCompanyId
     FROM users
     WHERE id = @UserId
-      AND "IsDeleted" = false
+      AND is_deleted = false
     LIMIT 1;
     """;
 

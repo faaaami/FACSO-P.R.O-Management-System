@@ -111,7 +111,7 @@ public sealed class EmployeeReadRepository
             "PageSize",
             pageSize);
 
-        await using var connection =
+            await using var connection =
             await _dataSource.OpenConnectionAsync(
                 cancellationToken);
 

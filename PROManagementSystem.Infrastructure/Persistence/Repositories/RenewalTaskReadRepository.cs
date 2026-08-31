@@ -1,6 +1,13 @@
 ﻿using Dapper;
 using Npgsql;
+using PROManagementSystem.Application.Agent.Queries.GetAgentDocuments;
+using PROManagementSystem.Application.Clients.Queries.GetClientCompanies;
+using PROManagementSystem.Application.Clients.Queries.GetClientCompanyById;
+using PROManagementSystem.Application.Clients.Queries.GetClientEntities;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Employees.Queries.GetEmployeeById;
+using PROManagementSystem.Application.Employees.Queries.GetEmployeeDocuments;
+using PROManagementSystem.Application.Employees.Queries.GetEmployees;
 using PROManagementSystem.Application.Staff.Queries.GetAllStaffWorkload;
 using PROManagementSystem.Application.Staff.Queries.GetStaffWorkload;
 using PROManagementSystem.Application.Tasks.Queries.GetAgentServiceFeeInvoice;
@@ -8,6 +15,7 @@ using PROManagementSystem.Application.Tasks.Queries.GetRenewalTaskById;
 using PROManagementSystem.Application.Tasks.Queries.GetRenewalTaskHistory;
 using PROManagementSystem.Application.Tasks.Queries.GetRenewalTasks;
 using PROManagementSystem.Application.Tasks.Queries.GetRenewalTaskSteps;
+using PROManagementSystem.Application.Documents.Queries.GetExpiringDocuments;
 using PROManagementSystem.Domain.Enums;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
@@ -899,6 +907,856 @@ public sealed class RenewalTaskReadRepository
                 cancellationToken: cancellationToken));
     }
 
+
+    // ============================================================
+    // GET /agent/clients — agent-scoped client companies
+    // ============================================================
+
+    public async Task<GetClientCompaniesResponseDto> GetAgentClientCompaniesAsync(
+        Guid agentId,
+        int page,
+        int pageSize,
+        string? search,
+        CancellationToken cancellationToken)
+    {
+        var offset = (page - 1) * pageSize;
+
+        var whereConditions = new List<string>
+        {
+            "rt.\"AssignedStaffId\" = @AgentId",
+            "rt.\"IsDeleted\" = false",
+            "cc.is_deleted = false"
+        };
+
+        var parameters = new DynamicParameters();
+        parameters.Add("AgentId", agentId);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            whereConditions.Add(
+                "(cc.company_name ILIKE @Search " +
+                "OR cc.trade_license_number ILIKE @Search)");
+            parameters.Add("Search", $"%{search.Trim()}%");
+        }
+
+        var whereClause =
+            "WHERE " + string.Join(" AND ", whereConditions);
+
+        var countSql = $"""
+            SELECT COUNT(DISTINCT cc.id)
+            FROM client_companies cc
+            INNER JOIN renewal_tasks rt
+                ON rt."ClientCompanyId" = cc.id
+            {whereClause};
+            """;
+
+        var dataSql = $"""
+            SELECT DISTINCT
+                cc.id AS Id,
+                cc.company_name AS CompanyName,
+                cc.trade_license_number AS TradeLicenseNumber,
+                cc.phone AS Phone,
+                cc.email AS Email,
+                cc.emirate AS Emirate,
+                cc.is_active AS IsActive,
+                cc.is_deleted AS IsDeleted,
+                cc.created_at AS CreatedAt
+            FROM client_companies cc
+            INNER JOIN renewal_tasks rt
+                ON rt."ClientCompanyId" = cc.id
+            {whereClause}
+            ORDER BY cc.created_at DESC
+            OFFSET @Offset
+            LIMIT @PageSize;
+            """;
+
+        parameters.Add("Offset", offset);
+        parameters.Add("PageSize", pageSize);
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var totalCount =
+            await connection.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    countSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        var items =
+            await connection.QueryAsync<ClientCompanyListItemDto>(
+                new CommandDefinition(
+                    dataSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        return new GetClientCompaniesResponseDto(
+            items.ToList(), page, pageSize, totalCount);
+    }
+
+
+    // ============================================================
+    // GET /agent/clients/{id} — agent-scoped client company by ID
+    // ============================================================
+
+    public async Task<GetClientCompanyByIdResponseDto?> GetAgentClientCompanyByIdAsync(
+        Guid agentId,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+        SELECT
+            cc.id AS Id,
+            cc.company_name AS CompanyName,
+            cc.trade_license_number AS TradeLicenseNumber,
+            cc.phone AS Phone,
+            cc.email AS Email,
+            cc.address AS Address,
+            cc.emirate AS Emirate,
+            cc.is_active AS IsActive,
+            cc.is_deleted AS IsDeleted,
+            cc.created_at AS CreatedAt,
+            cc.updated_at AS UpdatedAt
+        FROM client_companies cc
+        INNER JOIN renewal_tasks rt
+            ON rt."ClientCompanyId" = cc.id
+        WHERE cc.id = @CompanyId
+          AND rt."AssignedStaffId" = @AgentId
+          AND rt."IsDeleted" = false
+          AND cc.is_deleted = false
+        LIMIT 1;
+        """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        return await connection.QuerySingleOrDefaultAsync<
+            GetClientCompanyByIdResponseDto>(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    AgentId = agentId,
+                    CompanyId = companyId
+                },
+                cancellationToken: cancellationToken));
+    }
+
+
+    // ============================================================
+    // GET /agent/clients/{id}/entities — agent-scoped entities
+    // ============================================================
+
+    public async Task<GetClientEntitiesResponseDto> GetAgentClientEntitiesAsync(
+        Guid agentId,
+        Guid companyId,
+        int page,
+        int pageSize,
+        string? search,
+        CancellationToken cancellationToken)
+    {
+        var offset = (page - 1) * pageSize;
+
+        var whereConditions = new List<string>
+        {
+            "rt.\"AssignedStaffId\" = @AgentId",
+            "rt.\"ClientCompanyId\" = @CompanyId",
+            "rt.\"IsDeleted\" = false",
+            "ce.is_deleted = false",
+            "(d.client_entity_id = ce.id OR emp.client_entity_id = ce.id)"
+        };
+
+        var parameters = new DynamicParameters();
+        parameters.Add("AgentId", agentId);
+        parameters.Add("CompanyId", companyId);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            whereConditions.Add(
+                "(ce.entity_name ILIKE @Search " +
+                "OR ce.trade_license_number ILIKE @Search)");
+            parameters.Add("Search", $"%{search.Trim()}%");
+        }
+
+        var whereClause =
+            "WHERE " + string.Join(" AND ", whereConditions);
+
+        var countSql = $"""
+            SELECT COUNT(DISTINCT ce.id)
+            FROM client_entities ce
+            INNER JOIN renewal_tasks rt
+                ON rt."ClientCompanyId" = ce.client_company_id
+            INNER JOIN documents d
+                ON d.id = rt."DocumentId"
+            LEFT JOIN employees emp
+                ON emp.id = d.employee_id
+            {whereClause};
+            """;
+
+        var dataSql = $"""
+            SELECT DISTINCT
+                ce.id AS Id,
+                ce.client_company_id AS ClientCompanyId,
+                ce.entity_name AS EntityName,
+                ce.trade_license_number AS TradeLicenseNumber,
+                ce.emirate AS Emirate,
+                ce.is_active AS IsActive,
+                ce.is_deleted AS IsDeleted,
+                ce.created_at AS CreatedAt
+            FROM client_entities ce
+            INNER JOIN renewal_tasks rt
+                ON rt."ClientCompanyId" = ce.client_company_id
+            INNER JOIN documents d
+                ON d.id = rt."DocumentId"
+            LEFT JOIN employees emp
+                ON emp.id = d.employee_id
+            {whereClause}
+            ORDER BY ce.created_at DESC
+            OFFSET @Offset
+            LIMIT @PageSize;
+            """;
+
+        parameters.Add("Offset", offset);
+        parameters.Add("PageSize", pageSize);
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var totalCount =
+            await connection.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    countSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        var items =
+            await connection.QueryAsync<GetClientEntityListItemDto>(
+                new CommandDefinition(
+                    dataSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        return new GetClientEntitiesResponseDto(
+            items.ToList(), page, pageSize, totalCount);
+    }
+
+
+    // ============================================================
+    // GET /agent/employees — agent-scoped employees
+    // ============================================================
+
+    public async Task<GetEmployeesResponseDto> GetAgentEmployeesAsync(
+        Guid agentId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var offset = (page - 1) * pageSize;
+
+        var parameters = new DynamicParameters();
+        parameters.Add("AgentId", agentId);
+
+        const string countSql = """
+            SELECT COUNT(DISTINCT e.id)
+            FROM employees e
+            INNER JOIN client_entities ce
+                ON ce.id = e.client_entity_id
+            INNER JOIN documents d
+                ON d.employee_id = e.id
+            INNER JOIN renewal_tasks rt
+                ON rt."DocumentId" = d.id
+            WHERE rt."AssignedStaffId" = @AgentId
+              AND rt."IsDeleted" = false
+              AND e.is_deleted = false
+              AND ce.is_deleted = false;
+            """;
+
+        const string dataSql = """
+            SELECT DISTINCT
+                e.id AS Id,
+                e.client_entity_id AS ClientEntityId,
+                ce.entity_name AS EntityName,
+                e.full_name AS FullName,
+                e.passport_number AS PassportNumber,
+                e.nationality AS Nationality,
+                e.job_title AS JobTitle,
+                e.hire_date AS HireDate,
+                e.is_active AS IsActive,
+                e.is_deleted AS IsDeleted,
+                e.created_at AS CreatedAt
+            FROM employees e
+            INNER JOIN client_entities ce
+                ON ce.id = e.client_entity_id
+            INNER JOIN documents d
+                ON d.employee_id = e.id
+            INNER JOIN renewal_tasks rt
+                ON rt."DocumentId" = d.id
+            WHERE rt."AssignedStaffId" = @AgentId
+              AND rt."IsDeleted" = false
+              AND e.is_deleted = false
+              AND ce.is_deleted = false
+            ORDER BY e.created_at DESC
+            OFFSET @Offset
+            LIMIT @PageSize;
+            """;
+
+        parameters.Add("Offset", offset);
+        parameters.Add("PageSize", pageSize);
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var totalCount =
+            await connection.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    countSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        var items =
+            await connection.QueryAsync<GetEmployeeListItemDto>(
+                new CommandDefinition(
+                    dataSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        return new GetEmployeesResponseDto(
+            items.ToList(), page, pageSize, totalCount);
+    }
+
+
+    // ============================================================
+    // GET /agent/employees/{id} — agent-scoped employee by ID
+    // ============================================================
+
+    public async Task<GetEmployeeByIdResponseDto?> GetAgentEmployeeByIdAsync(
+        Guid agentId,
+        Guid employeeId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+        SELECT
+            e.id AS Id,
+            e.client_entity_id AS ClientEntityId,
+            ce.client_company_id AS ClientCompanyId,
+            ce.entity_name AS EntityName,
+            e.full_name AS FullName,
+            e.passport_number AS PassportNumber,
+            e.date_of_birth AS DateOfBirth,
+            e.nationality AS Nationality,
+            e.job_title AS JobTitle,
+            e.hire_date AS HireDate,
+            e.is_active AS IsActive,
+            e.is_deleted AS IsDeleted,
+            e.created_at AS CreatedAt,
+            e.updated_at AS UpdatedAt
+        FROM employees e
+        INNER JOIN client_entities ce
+            ON ce.id = e.client_entity_id
+        INNER JOIN documents d
+            ON d.employee_id = e.id
+        INNER JOIN renewal_tasks rt
+            ON rt."DocumentId" = d.id
+        WHERE e.id = @EmployeeId
+          AND rt."AssignedStaffId" = @AgentId
+          AND rt."IsDeleted" = false
+          AND e.is_deleted = false
+        LIMIT 1;
+        """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        return await connection.QuerySingleOrDefaultAsync<
+            GetEmployeeByIdResponseDto>(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    AgentId = agentId,
+                    EmployeeId = employeeId
+                },
+                cancellationToken: cancellationToken));
+    }
+
+
+    // ============================================================
+    // GET /agent/employees/{id}/documents — agent-scoped docs
+    // ============================================================
+
+    public async Task<GetEmployeeDocumentsResponseDto> GetAgentEmployeeDocumentsAsync(
+        Guid agentId,
+        Guid employeeId,
+        CancellationToken cancellationToken)
+    {
+        var parameters = new DynamicParameters();
+        parameters.Add("AgentId", agentId);
+        parameters.Add("EmployeeId", employeeId);
+
+        const string countSql = """
+            SELECT COUNT(DISTINCT d.id)
+            FROM documents d
+            INNER JOIN renewal_tasks rt
+                ON rt."DocumentId" = d.id
+            WHERE d.employee_id = @EmployeeId
+              AND rt."AssignedStaffId" = @AgentId
+              AND rt."IsDeleted" = false
+              AND d.is_deleted = false;
+            """;
+
+        const string dataSql = """
+            SELECT DISTINCT
+                d.id AS Id,
+                d.employee_id AS EmployeeId,
+                d.type AS Type,
+                d.document_number AS DocumentNumber,
+                d.issue_date AS IssueDate,
+                d.expiry_date AS ExpiryDate,
+                d.file_url AS FileUrl,
+                d.file_name AS FileName,
+                d.content_type AS ContentType,
+                d.file_size AS FileSize,
+                d.is_active AS IsActive,
+                d.is_deleted AS IsDeleted,
+                d.created_at AS CreatedAt,
+                d.updated_at AS UpdatedAt,
+                CASE
+                    WHEN d.expiry_date IS NULL THEN 1
+                    WHEN d.expiry_date < CURRENT_TIMESTAMP THEN 3
+                    WHEN d.expiry_date <= CURRENT_TIMESTAMP
+                        + INTERVAL '30 days' THEN 2
+                    ELSE 1
+                END AS Status
+            FROM documents d
+            INNER JOIN renewal_tasks rt
+                ON rt."DocumentId" = d.id
+            WHERE d.employee_id = @EmployeeId
+              AND rt."AssignedStaffId" = @AgentId
+              AND rt."IsDeleted" = false
+              AND d.is_deleted = false
+            ORDER BY d.created_at DESC;
+            """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var totalCount =
+            await connection.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    countSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        var items =
+            await connection.QueryAsync<EmployeeDocumentListItemDto>(
+                new CommandDefinition(
+                    dataSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        return new GetEmployeeDocumentsResponseDto(
+            items.ToList(), totalCount);
+    }
+
+
+    // ============================================================
+    // GET /agent/documents — agent-scoped document scope checks
+    // ============================================================
+
+    public async Task<bool> IsAgentDocumentInScopeAsync(
+        Guid agentId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        // Strict task-linked scope. A document is in the agent's scope
+        // only when it is the DocumentId of a non-deleted renewal task
+        // assigned to the authenticated agent. No company-rooted access.
+        const string sql = """
+            SELECT COUNT(*)
+            FROM documents d
+            WHERE d.id = @DocumentId
+              AND d.is_deleted = false
+              AND EXISTS (
+                  SELECT 1 FROM renewal_tasks rt
+                  WHERE rt."DocumentId" = d.id
+                    AND rt."AssignedStaffId" = @AgentId
+                    AND rt."IsDeleted" = false
+              );
+            """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var count = await connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    AgentId = agentId,
+                    DocumentId = documentId
+                },
+                cancellationToken: cancellationToken));
+
+        return count > 0;
+    }
+
+
+    public async Task<bool> IsAgentEmployeeInScopeAsync(
+        Guid agentId,
+        Guid employeeId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT COUNT(*)
+            FROM employees e
+            INNER JOIN documents d
+                ON d.employee_id = e.id
+            INNER JOIN renewal_tasks rt
+                ON rt."DocumentId" = d.id
+            WHERE e.id = @EmployeeId
+              AND rt."AssignedStaffId" = @AgentId
+              AND rt."IsDeleted" = false
+              AND e.is_deleted = false;
+            """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var count = await connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    AgentId = agentId,
+                    EmployeeId = employeeId
+                },
+                cancellationToken: cancellationToken));
+
+        return count > 0;
+    }
+
+
+    public async Task<bool> IsAgentEntityInScopeAsync(
+        Guid agentId,
+        Guid entityId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT COUNT(*)
+            FROM client_entities ce
+            INNER JOIN renewal_tasks rt
+                ON rt."ClientCompanyId" = ce.client_company_id
+            INNER JOIN documents d
+                ON d.id = rt."DocumentId"
+            LEFT JOIN employees emp
+                ON emp.id = d.employee_id
+            WHERE ce.id = @EntityId
+              AND rt."AssignedStaffId" = @AgentId
+              AND rt."IsDeleted" = false
+              AND ce.is_deleted = false
+              AND (d.client_entity_id = ce.id OR emp.client_entity_id = ce.id);
+            """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var count = await connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    AgentId = agentId,
+                    EntityId = entityId
+                },
+                cancellationToken: cancellationToken));
+
+        return count > 0;
+    }
+
+
+    public async Task<HashSet<Guid>> GetAgentScopedDocumentIdsAsync(
+        Guid agentId,
+        CancellationToken cancellationToken)
+    {
+        // Strict task-linked scope: a document is in scope only when it is
+        // the DocumentId of a non-deleted renewal task assigned to the
+        // authenticated agent. No company-rooted access.
+        const string sql = """
+            SELECT DISTINCT d.id
+            FROM documents d
+            WHERE d.is_deleted = false
+              AND EXISTS (
+                  SELECT 1 FROM renewal_tasks rt
+                  WHERE rt."DocumentId" = d.id
+                    AND rt."AssignedStaffId" = @AgentId
+                    AND rt."IsDeleted" = false
+              );
+            """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var ids = await connection.QueryAsync<Guid>(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    AgentId = agentId
+                },
+                cancellationToken: cancellationToken));
+
+        return ids.ToHashSet();
+    }
+
+
+    // ============================================================
+    // GET /agent/documents — agent-scoped document list
+    // ============================================================
+
+    public async Task<GetAgentDocumentsResponseDto> GetAgentDocumentsAsync(
+        Guid agentId,
+        DocumentType? type,
+        DocumentStatus? status,
+        DateTime? expiresBefore,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var offset = (page - 1) * pageSize;
+
+        var whereConditions = new List<string>
+        {
+            // Strict task-linked scope predicate. A document is in scope
+            // only when it is the DocumentId of a non-deleted renewal task
+            // assigned to the authenticated agent. No company-rooted access.
+            "EXISTS (SELECT 1 FROM renewal_tasks rt " +
+            "WHERE rt.\"DocumentId\" = d.id " +
+            "AND rt.\"AssignedStaffId\" = @AgentId " +
+            "AND rt.\"IsDeleted\" = false)",
+            "d.is_deleted = false"
+        };
+
+        var parameters = new DynamicParameters();
+        parameters.Add("AgentId", agentId);
+
+        if (type.HasValue)
+        {
+            whereConditions.Add("d.type = @Type");
+            parameters.Add("Type", (int)type.Value);
+        }
+
+        if (status.HasValue)
+        {
+            switch (status.Value)
+            {
+                case DocumentStatus.Active:
+                    whereConditions.Add(
+                        "d.expiry_date IS NULL OR " +
+                        "(d.expiry_date > CURRENT_TIMESTAMP + INTERVAL '30 days')");
+                    break;
+
+                case DocumentStatus.ExpiringSoon:
+                    whereConditions.Add(
+                        "d.expiry_date IS NOT NULL AND " +
+                        "d.expiry_date > CURRENT_TIMESTAMP AND " +
+                        "d.expiry_date <= CURRENT_TIMESTAMP + INTERVAL '30 days'");
+                    break;
+
+                case DocumentStatus.Overdue:
+                    whereConditions.Add(
+                        "d.expiry_date IS NOT NULL AND " +
+                        "d.expiry_date < CURRENT_TIMESTAMP");
+                    break;
+
+                case DocumentStatus.InRenewal:
+                    whereConditions.Add(
+                        "EXISTS (SELECT 1 FROM renewal_tasks rt3 " +
+                        "WHERE rt3.\"DocumentId\" = d.id " +
+                        "AND rt3.\"Status\" IN (1, 2, 3, 5) " +
+                        "AND rt3.\"IsDeleted\" = false)");
+                    break;
+            }
+        }
+
+        if (expiresBefore.HasValue)
+        {
+            whereConditions.Add(
+                "d.expiry_date <= @ExpiresBefore");
+            parameters.Add("ExpiresBefore", expiresBefore.Value);
+        }
+
+        var whereClause =
+            "WHERE " + string.Join(" AND ", whereConditions);
+
+        var countSql = $"""
+            SELECT COUNT(DISTINCT d.id)
+            FROM documents d
+            {whereClause};
+            """;
+
+        var dataSql = $"""
+            SELECT DISTINCT
+                d.id AS Id,
+                d.client_entity_id AS ClientEntityId,
+                d.employee_id AS EmployeeId,
+                d.type AS Type,
+                d.document_number AS DocumentNumber,
+                d.issue_date AS IssueDate,
+                d.expiry_date AS ExpiryDate,
+                d.file_url AS FileUrl,
+                d.file_name AS FileName,
+                d.content_type AS ContentType,
+                d.file_size AS FileSize,
+                d.is_active AS IsActive,
+                d.is_deleted AS IsDeleted,
+                d.created_at AS CreatedAt,
+                d.updated_at AS UpdatedAt,
+                CASE
+                    WHEN d.expiry_date IS NULL THEN 1
+                    WHEN d.expiry_date < CURRENT_TIMESTAMP THEN 3
+                    WHEN d.expiry_date <= CURRENT_TIMESTAMP
+                        + INTERVAL '30 days' THEN 2
+                    ELSE 1
+                END AS Status
+            FROM documents d
+            {whereClause}
+            ORDER BY d.created_at DESC
+            OFFSET @Offset
+            LIMIT @PageSize;
+            """;
+
+        parameters.Add("Offset", offset);
+        parameters.Add("PageSize", pageSize);
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var totalCount =
+            await connection.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    countSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        var items =
+            await connection.QueryAsync<AgentDocumentListItemDto>(
+                new CommandDefinition(
+                    dataSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        return new GetAgentDocumentsResponseDto(
+            items.ToList(), page, pageSize, totalCount);
+    }
+
+
+    // ============================================================
+    // GET /agent/documents/expiring — agent-scoped expiring docs
+    // ============================================================
+
+    public async Task<GetExpiringDocumentsResponseDto> GetAgentExpiringDocumentsAsync(
+        Guid agentId,
+        int days,
+        int page,
+        int pageSize,
+        bool includeExpired,
+        CancellationToken cancellationToken)
+    {
+        var offset = (page - 1) * pageSize;
+
+        var whereConditions = new List<string>
+        {
+            // Strict task-linked scope predicate. A document is in scope
+            // only when it is the DocumentId of a non-deleted renewal task
+            // assigned to the authenticated agent. No company-rooted access.
+            "EXISTS (SELECT 1 FROM renewal_tasks rt " +
+            "WHERE rt.\"DocumentId\" = d.id " +
+            "AND rt.\"AssignedStaffId\" = @AgentId " +
+            "AND rt.\"IsDeleted\" = false)",
+            "d.is_deleted = false"
+        };
+
+        var parameters = new DynamicParameters();
+        parameters.Add("AgentId", agentId);
+
+        if (includeExpired)
+        {
+            whereConditions.Add(
+                "d.expiry_date <= CURRENT_TIMESTAMP + " +
+                "(INTERVAL '1 day' * @Days)");
+        }
+        else
+        {
+            whereConditions.Add(
+                "d.expiry_date > CURRENT_TIMESTAMP AND " +
+                "d.expiry_date <= CURRENT_TIMESTAMP + " +
+                "(INTERVAL '1 day' * @Days)");
+        }
+
+        parameters.Add("Days", days);
+
+        var whereClause =
+            "WHERE " + string.Join(" AND ", whereConditions);
+
+        var countSql = $"""
+            SELECT COUNT(DISTINCT d.id)
+            FROM documents d
+            {whereClause};
+            """;
+
+        var dataSql = $"""
+            SELECT DISTINCT
+                d.id AS Id,
+                d.client_entity_id AS ClientEntityId,
+                d.employee_id AS EmployeeId,
+                d.type AS Type,
+                d.document_number AS DocumentNumber,
+                d.issue_date AS IssueDate,
+                d.expiry_date AS ExpiryDate,
+                d.file_name AS FileName,
+                d.is_active AS IsActive,
+                d.is_deleted AS IsDeleted,
+                GREATEST(
+                    0,
+                    (d.expiry_date::date - CURRENT_DATE::date)
+                ) AS DaysRemaining,
+                CASE
+                    WHEN d.expiry_date IS NULL THEN 'Active'
+                    WHEN d.expiry_date < CURRENT_TIMESTAMP THEN 'Overdue'
+                    WHEN d.expiry_date <= CURRENT_TIMESTAMP
+                        + INTERVAL '30 days' THEN 'ExpiringSoon'
+                    ELSE 'Active'
+                END AS Status
+            FROM documents d
+            {whereClause}
+            ORDER BY d.expiry_date ASC
+            OFFSET @Offset
+            LIMIT @PageSize;
+            """;
+
+        parameters.Add("Offset", offset);
+        parameters.Add("PageSize", pageSize);
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var totalCount =
+            await connection.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    countSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        var items =
+            await connection.QueryAsync<ExpiringDocumentListItemDto>(
+                new CommandDefinition(
+                    dataSql,
+                    parameters,
+                    cancellationToken: cancellationToken));
+
+        return new GetExpiringDocumentsResponseDto(
+            items.ToList(), page, pageSize, totalCount);
+    }
 }
 
 

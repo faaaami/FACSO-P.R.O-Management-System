@@ -36,6 +36,12 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Configuration.AddJsonFile(
+    "appsettings.Local.json",
+    optional: true,
+    reloadOnChange: true);
+
+
 builder.Host.UseSerilog();
 
 // ========================================
@@ -368,10 +374,21 @@ builder.Services
 
 
 // ========================================
-// SignalR
+// SignalR + Redis backplane
 // ========================================
 
-builder.Services.AddSignalR();
+builder.Services
+    .AddSignalR()
+    .AddStackExchangeRedis(
+        builder.Configuration.GetConnectionString("Redis")
+        ?? throw new InvalidOperationException(
+            "Redis connection string is not configured."),
+        options =>
+        {
+            options.Configuration.ChannelPrefix =
+                StackExchange.Redis.RedisChannel.Literal(
+                    "PROManagementSystem:signalr");
+        });
 
 builder.Services.AddScoped<
     IRealtimeNotificationService,
@@ -404,6 +421,10 @@ builder.Services.AddSwaggerGen(options =>
                 "Bearer",
                 document)] = []
         });
+
+    // Documents the Agent PATCH document request body (OpenAPI-only,
+    // because the endpoint parses the raw JSON body manually).
+    options.OperationFilter<AgentPatchRequestBodyFilter>();
 });
 
 // ========================================
@@ -503,3 +524,5 @@ app.MapHealthChecks(
         }
     });
 app.Run();
+
+public partial class Program { }

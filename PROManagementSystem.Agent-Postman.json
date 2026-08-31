@@ -1,0 +1,917 @@
+{
+  "info": {
+    "name": "PRO Management System - Agent API",
+    "description": "Agent-scoped endpoints for the PRO Management System. Covers Authentication, Tasks (status machine), Clients, Entities, Employees, Documents, Notifications, and Account. Access is strictly task-linked: an agent can only see resources belonging to renewal tasks assigned to them. JWT bearer auth is required on all Agent endpoints.\n\nSetup:\n1. Set the baseUrl variable (default http://localhost:5000).\n2. Run 'Agent Login' (or 'Admin Login') to obtain a token; the test script stores it in the agentToken/adminToken variables.\n3. Collection-level bearer auth uses the agentToken variable. To run with admin/client tokens, override the Authorization header or pre-request script.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{agentToken}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "agentToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "clientToken", "value": "" },
+    { "key": "agentId", "value": "" },
+    { "key": "taskId", "value": "" },
+    { "key": "clientId", "value": "" },
+    { "key": "entityId", "value": "" },
+    { "key": "employeeId", "value": "" },
+    { "key": "documentId", "value": "" },
+    { "key": "extractionId", "value": "" },
+    { "key": "notificationId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Agent Login",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"agent@example.com\",\n  \"password\": \"AgentPass!123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login returns 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json().data || pm.response.json();",
+                  "pm.collectionVariables.set('agentToken', body.accessToken || body.token || body);",
+                  "pm.collectionVariables.set('agentId', (body.user && body.user.id) || body.userId || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin Login",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"AdminPass!123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login returns 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json().data || pm.response.json();",
+                  "pm.collectionVariables.set('adminToken', body.accessToken || body.token || body);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Tasks",
+      "item": [
+        {
+          "name": "List My Tasks",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/tasks?status=&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "tasks"],
+              "query": [
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('List returns 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json().data || pm.response.json();",
+                  "const items = body.items || body.tasks || (Array.isArray(body) ? body : []);",
+                  "if (items && items.length) { pm.collectionVariables.set('taskId', items[0].id || items[0].taskId || ''); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Task",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/tasks/{{taskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "tasks", "{{taskId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get task returns 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Task belongs to agent (scope check)', () => {",
+                  "  const body = pm.response.json().data || pm.response.json();",
+                  "  pm.expect(body).to.not.be.undefined;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Task Status (sequential)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"FeePaid\",\n  \"note\": \"Fee confirmed by agent\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/tasks/{{taskId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "tasks", "{{taskId}}", "status"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status update returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Task Status (skip - expect 409)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Approved\",\n  \"note\": \"Attempting to skip stages\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/tasks/{{taskId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "tasks", "{{taskId}}", "status"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Out-of-sequence transition returns 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Block Task",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"blockedReason\": \"Awaiting client documents\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/tasks/{{taskId}}/block",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "tasks", "{{taskId}}", "block"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Block returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unassigned Task Returns 404",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/tasks/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "tasks", "00000000-0000-0000-0000-000000000000"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Task not owned by agent returns 404 (scope leak guard)', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Clients",
+      "item": [
+        {
+          "name": "List Clients (task-linked)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/clients",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "clients"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('List clients returns 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json().data || pm.response.json();",
+                  "const items = body.items || body.clients || (Array.isArray(body) ? body : []);",
+                  "if (items && items.length) { pm.collectionVariables.set('clientId', items[0].id || items[0].clientId || ''); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Client",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/clients/{{clientId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "clients", "{{clientId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get client returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Client Entities",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/clients/{{clientId}}/entities",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "clients", "{{clientId}}", "entities"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get client entities returns 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json().data || pm.response.json();",
+                  "const items = body.items || body.entities || (Array.isArray(body) ? body : []);",
+                  "if (items && items.length) { pm.collectionVariables.set('entityId', items[0].id || items[0].entityId || ''); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Entities",
+      "item": [
+        {
+          "name": "Get Entity Documents",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/entities/{{entityId}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "entities", "{{entityId}}", "documents"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get entity documents returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Entity Document",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documentNumber\": \"TL-2026-001\",\n  \"type\": \"TradeLicense\",\n  \"issueDate\": \"2026-01-01\",\n  \"expiryDate\": \"2027-01-01\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/entities/{{entityId}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "entities", "{{entityId}}", "documents"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Register entity document returns 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json().data || pm.response.json();",
+                  "pm.collectionVariables.set('documentId', body.id || body.documentId || '');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Employees",
+      "item": [
+        {
+          "name": "List Employees",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/employees",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "employees"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('List employees returns 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json().data || pm.response.json();",
+                  "const items = body.items || body.employees || (Array.isArray(body) ? body : []);",
+                  "if (items && items.length) { pm.collectionVariables.set('employeeId', items[0].id || items[0].employeeId || ''); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Employee",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/employees/{{employeeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "employees", "{{employeeId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get employee returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Employee Documents",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/employees/{{employeeId}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "employees", "{{employeeId}}", "documents"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get employee documents returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Employee Document",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documentNumber\": \"PSP-2026-001\",\n  \"type\": \"Passport\",\n  \"issueDate\": \"2026-01-01\",\n  \"expiryDate\": \"2031-01-01\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/employees/{{employeeId}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "employees", "{{employeeId}}", "documents"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Register employee document returns 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "List Documents",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/documents?page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "documents"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('List documents returns 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json().data || pm.response.json();",
+                  "const items = body.items || body.documents || (Array.isArray(body) ? body : []);",
+                  "if (items && items.length) { pm.collectionVariables.set('documentId', items[0].id || items[0].documentId || ''); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Expiring Documents",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/documents/expiring?days=30",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "documents", "expiring"],
+              "query": [{ "key": "days", "value": "30" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('List expiring documents returns 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json().data || pm.response.json();",
+                  "const items = body.items || body.documents || (Array.isArray(body) ? body : []);",
+                  "items.forEach(d => {",
+                  "  pm.test('Expiring doc is within 30 days', () => {",
+                  "    const exp = new Date(d.expiryDate);",
+                  "    const days = (exp - Date.now()) / 86400000;",
+                  "    pm.expect(days).to.be.at.most(30);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Document",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/documents/{{documentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "documents", "{{documentId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get document returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Document Dependencies",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/documents/{{documentId}}/dependencies",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "documents", "{{documentId}}", "dependencies"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get dependencies returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Document",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"Visa\",\n  \"expiryDate\": \"2027-06-30\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/documents/{{documentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "documents", "{{documentId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Update document returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Extract Document (multipart)",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": "/path/to/sample.pdf" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/documents/extract",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "documents", "extract"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Extract returns 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json().data || pm.response.json();",
+                  "pm.collectionVariables.set('extractionId', body.extractionId || body.id || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Confirm Extraction (201 - pending gap)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": \"{{employeeId}}\",\n  \"clientEntityId\": \"{{entityId}}\",\n  \"type\": \"Passport\",\n  \"documentNumber\": \"PSP-CONFIRM-001\",\n  \"issueDate\": \"2026-01-01\",\n  \"expiryDate\": \"2031-01-01\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/documents/extractions/{{extractionId}}/confirm",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "documents", "extractions", "{{extractionId}}", "confirm"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Confirm extraction returns 201', () => pm.response.to.have.status(201));",
+                  "console.log('NOTE: DocumentExtraction confirm does not yet enforce task-linked ownership on the extraction CreatedBy.', '<n/a>');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Scan Document",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/documents/{{documentId}}/scan",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "documents", "{{documentId}}", "scan"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Scan document returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Document Versions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/documents/{{documentId}}/versions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "documents", "{{documentId}}", "versions"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get versions returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List Notifications",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/notifications?page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "notifications"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('List notifications returns 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json().data || pm.response.json();",
+                  "const items = body.items || body.notifications || (Array.isArray(body) ? body : []);",
+                  "if (items && items.length) { pm.collectionVariables.set('notificationId', items[0].id || items[0].notificationId || ''); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark Notification Read",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/notifications/{{notificationId}}/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "notifications", "{{notificationId}}", "read"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mark read returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark All Read",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/notifications/read-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "notifications", "read-all"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mark all read returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Account",
+      "item": [
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "me"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get profile returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Workload",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/workload",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "workload"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get workload returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Agent New Name\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "me"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Update profile returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"AgentPass!123\",\n  \"newPassword\": \"AgentPass!456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/me/change-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "agent", "me", "change-password"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Change password returns 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

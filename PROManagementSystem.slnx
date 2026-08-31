@@ -3,4 +3,5 @@
   <Project Path="PROManagementSystem.Domain/PROManagementSystem.Domain.csproj" />
   <Project Path="PROManagementSystem.Infrastructure/PROManagementSystem.Infrastructure.csproj" />
   <Project Path="PROManagementSystem/PROManagementSystem.Api.csproj" />
+  <Project Path="PROManagementSystem.Tests/PROManagementSystem.Tests.csproj" />
 </Solution>

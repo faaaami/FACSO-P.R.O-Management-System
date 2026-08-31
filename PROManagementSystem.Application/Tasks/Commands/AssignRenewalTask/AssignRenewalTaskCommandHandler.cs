@@ -187,6 +187,29 @@ public sealed class AssignRenewalTaskCommandHandler
         };
         _context.AuditLogs.Add(auditLog);
 
+        // =========================================================
+        // 9b. Persist a notification for the assigned agent
+        // =========================================================
+
+        var agentNotification = new Notification
+        {
+            Id = Guid.NewGuid(),
+            UserId = staff.Id,
+            Title = "New task assigned",
+            Message =
+                $"TaskAssigned | TaskId:{task.Id} | " +
+                $"Document: {document.DocumentNumber}. " +
+                $"Task assigned to Agent: {staff.FullName}.",
+            IsRead = false,
+            ReadAt = null,
+            CreatedAt = task.UpdatedAt,
+            UpdatedAt = task.UpdatedAt,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+
+        _context.Notifications.Add(agentNotification);
+
 
         // =========================================================
         // 10. Save task + history

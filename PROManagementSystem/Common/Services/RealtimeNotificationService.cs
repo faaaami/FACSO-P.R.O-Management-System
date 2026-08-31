@@ -30,4 +30,19 @@ public sealed class RealtimeNotificationService
                 notification,
                 cancellationToken);
     }
+
+    public async Task SendTaskStatusChangedAsync(
+        TaskStatusChangedEvent notification,
+        CancellationToken cancellationToken)
+    {
+        var groupName =
+            $"user:{notification.StaffId}";
+
+        await _hubContext.Clients
+            .Group(groupName)
+            .SendAsync(
+                "TaskStatusChanged",
+                notification,
+                cancellationToken);
+    }
 }
