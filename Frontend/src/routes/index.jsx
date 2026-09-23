@@ -2,9 +2,11 @@ import { Routes, Route, Link } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
 import ProtectedRoute from '../auth/ProtectedRoute'
 import RoleRoute from '../auth/RoleRoute'
+import { useAuth } from '../auth/AuthContext'
 import Home from '../pages/Home'
 import Login from '../pages/Login'
 import ClientDashboard from '../pages/client/ClientDashboard'
+import DocumentsPage from '../pages/client/DocumentsPage'
 
 function RoutePlaceholder({ title }) {
   return (
@@ -15,6 +17,14 @@ function RoutePlaceholder({ title }) {
       </p>
     </div>
   )
+}
+
+function DocumentsRoute() {
+  const { user } = useAuth()
+  if (user?.role === 'Client') {
+    return <DocumentsPage />
+  }
+  return <RoutePlaceholder title="Documents" />
 }
 
 function NotFound() {
@@ -45,7 +55,7 @@ function AppRoutes() {
           <Route path="/" element={<Home />} />
           <Route path="/clients" element={<RoutePlaceholder title="Clients" />} />
           <Route path="/employees" element={<RoutePlaceholder title="Employees" />} />
-          <Route path="/documents" element={<RoutePlaceholder title="Documents" />} />
+          <Route path="/documents" element={<DocumentsRoute />} />
           <Route path="/renewal-tasks" element={<RoutePlaceholder title="Renewal Tasks" />} />
           <Route path="/service-requests" element={<RoutePlaceholder title="Service Requests" />} />
           <Route path="/invoices" element={<RoutePlaceholder title="Invoices" />} />
