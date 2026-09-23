@@ -4,6 +4,7 @@ import {
   Building2,
   Users,
   FileText,
+  FileSignature,
   RefreshCw,
   ClipboardList,
   Receipt,
@@ -41,6 +42,7 @@ const AGENT_NAVIGATION = [
 
 const CLIENT_NAVIGATION = [
   { name: 'Dashboard', path: '/client', icon: LayoutDashboard, exact: true },
+  { name: 'Contracts', path: '/contracts', icon: FileSignature },
   { name: 'Documents', path: '/documents', icon: FileText },
   { name: 'Service Requests', path: '/service-requests', icon: ClipboardList },
   { name: 'Renewal Tasks', path: '/renewal-tasks', icon: RefreshCw },
