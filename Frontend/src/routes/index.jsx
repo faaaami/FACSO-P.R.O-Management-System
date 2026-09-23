@@ -9,6 +9,7 @@ import ClientDashboard from '../pages/client/ClientDashboard'
 import DocumentsPage from '../pages/client/DocumentsPage'
 import ContractsPage from '../pages/client/ContractsPage'
 import ServiceRequestsPage from '../pages/client/ServiceRequestsPage'
+import RenewalTasksPage from '../pages/client/RenewalTasksPage'
 
 function RoutePlaceholder({ title }) {
   return (
@@ -45,6 +46,14 @@ function ServiceRequestsRoute() {
   return <RoutePlaceholder title="Service Requests" />
 }
 
+function RenewalTasksRoute() {
+  const { user } = useAuth()
+  if (user?.role === 'Client') {
+    return <RenewalTasksPage />
+  }
+  return <RoutePlaceholder title="Renewal Tasks" />
+}
+
 function NotFound() {
   return (
     <div className="min-h-screen bg-[#F7F8FA] flex flex-col items-center justify-center px-4 text-center">
@@ -75,7 +84,7 @@ function AppRoutes() {
           <Route path="/employees" element={<RoutePlaceholder title="Employees" />} />
           <Route path="/contracts" element={<ContractsRoute />} />
           <Route path="/documents" element={<DocumentsRoute />} />
-          <Route path="/renewal-tasks" element={<RoutePlaceholder title="Renewal Tasks" />} />
+          <Route path="/renewal-tasks" element={<RenewalTasksRoute />} />
           <Route path="/service-requests" element={<ServiceRequestsRoute />} />
           <Route path="/invoices" element={<RoutePlaceholder title="Invoices" />} />
           <Route path="/staff" element={<RoutePlaceholder title="Staff" />} />
