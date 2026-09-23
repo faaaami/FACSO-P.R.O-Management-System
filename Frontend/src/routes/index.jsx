@@ -8,6 +8,7 @@ import Login from '../pages/Login'
 import ClientDashboard from '../pages/client/ClientDashboard'
 import DocumentsPage from '../pages/client/DocumentsPage'
 import ContractsPage from '../pages/client/ContractsPage'
+import ServiceRequestsPage from '../pages/client/ServiceRequestsPage'
 
 function RoutePlaceholder({ title }) {
   return (
@@ -34,6 +35,14 @@ function ContractsRoute() {
     return <ContractsPage />
   }
   return <RoutePlaceholder title="Contracts" />
+}
+
+function ServiceRequestsRoute() {
+  const { user } = useAuth()
+  if (user?.role === 'Client') {
+    return <ServiceRequestsPage />
+  }
+  return <RoutePlaceholder title="Service Requests" />
 }
 
 function NotFound() {
@@ -67,7 +76,7 @@ function AppRoutes() {
           <Route path="/contracts" element={<ContractsRoute />} />
           <Route path="/documents" element={<DocumentsRoute />} />
           <Route path="/renewal-tasks" element={<RoutePlaceholder title="Renewal Tasks" />} />
-          <Route path="/service-requests" element={<RoutePlaceholder title="Service Requests" />} />
+          <Route path="/service-requests" element={<ServiceRequestsRoute />} />
           <Route path="/invoices" element={<RoutePlaceholder title="Invoices" />} />
           <Route path="/staff" element={<RoutePlaceholder title="Staff" />} />
           <Route path="/notifications" element={<RoutePlaceholder title="Notifications" />} />
