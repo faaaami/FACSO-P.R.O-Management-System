@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Domain;
 using PROManagementSystem.Domain.Entities;
@@ -115,5 +116,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         CancellationToken cancellationToken = default)
     {
         return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IDbContextTransaction> BeginTransactionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await Database.BeginTransactionAsync(cancellationToken);
     }
 }

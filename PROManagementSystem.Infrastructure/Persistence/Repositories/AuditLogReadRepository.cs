@@ -2,6 +2,7 @@ using Dapper;
 using Npgsql;
 using PROManagementSystem.Application.AuditLogs.Queries.GetAuditLog;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -104,8 +105,7 @@ public sealed class AuditLogReadRepository
             LEFT JOIN users u ON u.id = al.user_id
             WHERE {whereClause}
             ORDER BY al.created_at DESC
-            OFFSET @Offset ROWS
-            FETCH NEXT @PageSize ROWS ONLY;
+            {SqlSnippets.Pagination};
             """;
 
         var items =

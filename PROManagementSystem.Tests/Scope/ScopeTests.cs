@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using PROManagementSystem.Domain.Entities;
 using PROManagementSystem.Tests.Infrastructure;
 using Xunit;
 
@@ -259,6 +260,46 @@ public class ScopeTests : IntegrationTestBase
         var response = await ScopeClient.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact(DisplayName =
+        "Agent notification list sorts by notification title")]
+    public async Task NotificationList_SortByTitle_ReturnsSorted()
+    {
+        await WithScopeDbContextAsync(db =>
+        {
+            db.Notifications.Add(new Notification
+            {
+                Id = Guid.NewGuid(),
+                UserId = TestDataSeeder.Ids.AgentA,
+                Title = "Alert A",
+                Message = "Sorting probe",
+                IsRead = false,
+                ReadAt = null,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                IsDeleted = false,
+                DeletedAt = null
+            });
+            db.SaveChanges();
+        });
+
+        var response = await ScopeClient.SendAsync(
+            ScopeGet(
+                "/api/v1/agent/notifications?SortBy=title&SortDir=asc",
+                AgentA));
+
+        await EnsureOk(response, HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var titles = JsonNode.Parse(body)!
+            ["data"]!["items"]!
+            .AsArray()
+            .Select(item => (string)item!["title"]!)
+            .ToList();
+
+        Assert.Equal("Alert A", titles.First());
+        Assert.Equal("Inbox A", titles.Last());
     }
 
     // ------------------------------------------------------------------

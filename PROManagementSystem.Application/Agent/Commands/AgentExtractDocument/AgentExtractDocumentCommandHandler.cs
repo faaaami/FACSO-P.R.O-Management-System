@@ -1,4 +1,5 @@
 using MediatR;
+using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.Documents.Commands.ExtractDocument;
 using PROManagementSystem.Domain.Entities;
@@ -11,20 +12,20 @@ public sealed class AgentExtractDocumentCommandHandler
         ExtractDocumentResponseDto>
 {
     private readonly IDocumentExtractionService _extractor;
+    private readonly IFileStorageService _storage;
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
-    private readonly IRenewalTaskReadRepository _scopeRepository;
 
     public AgentExtractDocumentCommandHandler(
         IDocumentExtractionService extractor,
+        IFileStorageService storage,
         IApplicationDbContext context,
-        ICurrentUserService currentUser,
-        IRenewalTaskReadRepository scopeRepository)
+        ICurrentUserService currentUser)
     {
         _extractor = extractor;
+        _storage = storage;
         _context = context;
         _currentUser = currentUser;
-        _scopeRepository = scopeRepository;
     }
 
     public async Task<ExtractDocumentResponseDto> Handle(
@@ -46,65 +47,121 @@ public sealed class AgentExtractDocumentCommandHandler
         // Ensure the caller is an authenticated agent.
         var agentId = _currentUser.UserId!.Value;
 
-        var extractionResult =
-            await _extractor.ExtractAsync(
+        // 1. Persist the validated upload under a server-generated
+        //    storage reference before anything else can succeed.
+        var storedReference =
+            await _storage.SaveAsync(
                 request.FileStream,
+                request.FileName,
                 request.ContentType,
                 cancellationToken);
 
-        var now = DateTime.UtcNow;
-
-        var extraction = new DocumentExtraction
+        try
         {
-            Id = Guid.NewGuid(),
+            // Reset the stream so the extraction service reads from
+            // the start (storage has consumed it to EOF).
+            if (request.FileStream.CanSeek)
+            {
+                request.FileStream.Position = 0;
+            }
 
-            FileName = request.FileName,
+            var extractionResult =
+                await _extractor.ExtractAsync(
+                    request.FileStream,
+                    request.ContentType,
+                    cancellationToken);
 
-            ContentType = request.ContentType,
+            var now = DateTime.UtcNow;
 
-            FileSize = request.FileSize,
+            var extraction = new DocumentExtraction
+            {
+                Id = Guid.NewGuid(),
 
-            SuggestedType = extractionResult.Type,
+                FileName = request.FileName,
 
-            SuggestedDocumentNumber =
-                extractionResult.DocumentNumber,
+                FileUrl = storedReference,
 
-            SuggestedIssueDate =
-                extractionResult.IssueDate,
+                ContentType = request.ContentType,
 
-            SuggestedExpiryDate =
-                extractionResult.ExpiryDate,
+                FileSize = request.FileSize,
 
-            SuggestedOwnerType =
-                extractionResult.OwnerType,
+                SuggestedType = extractionResult.Type,
 
-            Confidence = extractionResult.Confidence,
+                SuggestedDocumentNumber =
+                    extractionResult.DocumentNumber,
 
-            Status = "Pending",
+                SuggestedIssueDate =
+                    extractionResult.IssueDate,
 
-            CreatedAt = now,
+                SuggestedExpiryDate =
+                    extractionResult.ExpiryDate,
 
-            UpdatedAt = now,
+                SuggestedOwnerType =
+                    extractionResult.OwnerType,
 
-            IsDeleted = false,
+                // Task 7B.5: type-specific field suggestions from the
+                // deterministic extractor; empty/null persists the canonical
+                // "{}". Never authoritative, never copied to Document.Details.
+                SuggestedDetails =
+                    DetailsJson.ToStorage(extractionResult.Details),
 
-            DeletedAt = null,
+                Confidence = extractionResult.Confidence,
 
-            ExpiresAt = now.AddHours(24)
-        };
+                Status = "Pending",
 
-        _context.DocumentExtractions.Add(extraction);
+                CreatedBy = agentId,
 
-        await _context.SaveChangesAsync(
-            cancellationToken);
+                CreatedAt = now,
 
-        return new ExtractDocumentResponseDto(
-            extraction.Id,
-            extraction.SuggestedType,
-            extraction.SuggestedDocumentNumber,
-            extraction.SuggestedIssueDate,
-            extraction.SuggestedExpiryDate,
-            extraction.SuggestedOwnerType,
-            extraction.Confidence);
+                UpdatedAt = now,
+
+                IsDeleted = false,
+
+                DeletedAt = null,
+
+                ExpiresAt = now.AddHours(24)
+            };
+
+            _context.DocumentExtractions.Add(extraction);
+
+            var auditLog = new AuditLog
+            {
+                Id = Guid.NewGuid(),
+                UserId = agentId,
+                Action = "DocumentExtractionStarted",
+                EntityType = "DocumentExtraction",
+                EntityId = extraction.Id,
+                Description =
+                    $"Document extraction started for file '{request.FileName}'.",
+                CreatedAt = now,
+                UpdatedAt = now,
+                IsDeleted = false,
+                DeletedAt = null
+            };
+            _context.AuditLogs.Add(auditLog);
+
+            await _context.SaveChangesAsync(
+                cancellationToken);
+
+            return new ExtractDocumentResponseDto(
+                extraction.Id,
+                extraction.SuggestedType,
+                extraction.SuggestedDocumentNumber,
+                extraction.SuggestedIssueDate,
+                extraction.SuggestedExpiryDate,
+                extraction.SuggestedOwnerType,
+                extraction.Confidence,
+                DetailsJson.FromStorage(extraction.SuggestedDetails));
+        }
+        catch
+        {
+            // Best-effort cleanup so a failed request does not leave an
+            // orphaned file behind a missing extraction record.
+            await _storage.DeleteAsync(
+                storedReference,
+                CancellationToken.None);
+
+            throw;
+        }
     }
 }

@@ -7,6 +7,8 @@ using PROManagementSystem.Application.Tasks.Commands.AssignRenewalTask;
 using PROManagementSystem.Application.Tasks.Commands.BlockRenewalTask;
 using PROManagementSystem.Application.Tasks.Commands.CancelRenewalTask;
 using PROManagementSystem.Application.Tasks.Commands.CreateRenewalTask;
+using PROManagementSystem.Application.Tasks.Commands.SetRenewalTaskServiceFee;
+using PROManagementSystem.Application.Tasks.Commands.UnblockRenewalTask;
 using PROManagementSystem.Application.Tasks.Commands.UpdateRenewalTaskStatus;
 using PROManagementSystem.Application.Tasks.Queries.GetRenewalTaskById;
 using PROManagementSystem.Application.Tasks.Queries.GetRenewalTaskHistory;
@@ -66,13 +68,17 @@ public sealed class TasksController : ControllerBase
     [FromQuery] RenewalTaskStatus? status,
     [FromQuery] Guid? assignedStaffId,
     [FromQuery] Guid? clientCompanyId,
-    CancellationToken cancellationToken)
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 20,
+    CancellationToken cancellationToken = default)
     {
         var query =
             new GetRenewalTasksQuery(
                 status,
                 assignedStaffId,
-                clientCompanyId);
+                clientCompanyId,
+                page,
+                pageSize);
 
         var result =
             await _sender.Send(
@@ -161,9 +167,10 @@ public sealed class TasksController : ControllerBase
     {
         var command =
             new UpdateRenewalTaskStatusCommand(
-                taskId,
-                request.Status,
-                request.Note);
+                  taskId,
+                  request.Status,
+                  request.Note,
+                  request.RenewedExpiryDate);
 
         var result =
             await _sender.Send(
@@ -202,6 +209,63 @@ public sealed class TasksController : ControllerBase
             ApiResponse<BlockRenewalTaskResponseDto>
                 .SuccessResponse(result));
     }
+
+    [HttpPatch("{taskId:guid}/unblock")]
+    [ProducesResponseType(typeof(ApiResponse<UnblockRenewalTaskResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Unblock(
+        Guid taskId,
+        [FromBody] UnblockRenewalTaskRequest request,
+        CancellationToken cancellationToken)
+    {
+        var command =
+            new UnblockRenewalTaskCommand(
+                taskId,
+                request.UnblockReason);
+
+        var result =
+            await _sender.Send(
+                command,
+                cancellationToken);
+
+        return Ok(
+            ApiResponse<UnblockRenewalTaskResponseDto>
+                .SuccessResponse(result));
+    }
+
+    [HttpPatch("{taskId:guid}/service-fee")]
+    [ProducesResponseType(typeof(ApiResponse<SetRenewalTaskServiceFeeResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> SetServiceFee(
+        Guid taskId,
+        [FromBody] SetRenewalTaskServiceFeeRequest request,
+        CancellationToken cancellationToken)
+    {
+        var command =
+            new SetRenewalTaskServiceFeeCommand(
+                taskId,
+                request.Amount);
+
+        var result =
+            await _sender.Send(
+                command,
+                cancellationToken);
+
+        return Ok(
+            ApiResponse<SetRenewalTaskServiceFeeResponseDto>
+                .SuccessResponse(result));
+    }
+
 
     [HttpDelete("{taskId:guid}")]
     [ProducesResponseType(typeof(ApiResponse<CancelRenewalTaskResponseDto>), StatusCodes.Status200OK)]

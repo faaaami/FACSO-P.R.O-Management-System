@@ -45,4 +45,20 @@ public sealed class RealtimeNotificationService
                 notification,
                 cancellationToken);
     }
+
+    public async Task SendNotificationReceivedAsync(
+        Guid userId,
+        NotificationReceivedDto notification,
+        CancellationToken cancellationToken)
+    {
+        var groupName =
+            $"user:{userId}";
+
+        await _hubContext.Clients
+            .Group(groupName)
+            .SendAsync(
+                "NotificationReceived",
+                notification,
+                cancellationToken);
+    }
 }

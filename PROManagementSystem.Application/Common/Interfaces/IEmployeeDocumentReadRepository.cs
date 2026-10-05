@@ -8,4 +8,8 @@ public interface IEmployeeDocumentReadRepository
         Guid employeeId,
         bool includeDeleted,
         CancellationToken cancellationToken);
+    Task<GetEmployeeDocumentsResponseDto> GetByEmployeeIdForCompanyAsync(
+        Guid clientCompanyId,
+        Guid employeeId,
+        CancellationToken cancellationToken);
 }

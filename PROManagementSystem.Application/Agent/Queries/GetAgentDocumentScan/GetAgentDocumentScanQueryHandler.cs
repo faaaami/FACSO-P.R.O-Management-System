@@ -57,8 +57,8 @@ public sealed class GetAgentDocumentScanQueryHandler
 
         if (document.IsDeleted)
         {
-            throw new InvalidOperationException(
-                "Cannot access a deleted document.");
+            throw new KeyNotFoundException(
+                "Document was not found.");
         }
 
         if (string.IsNullOrWhiteSpace(document.FileUrl))

@@ -12,7 +12,7 @@ namespace PROManagementSystem.Api.Controllers.PaymentOrders;
 
 [ApiController]
 [Route("api/v1")]
-[Authorize]
+[Authorize(Roles = "Admin")]
 public sealed class PaymentOrdersController : ControllerBase
 {
     private readonly ISender _sender;

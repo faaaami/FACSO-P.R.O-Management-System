@@ -1,6 +1,8 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Domain.Entities;
 
 namespace PROManagementSystem.Application.Documents.Commands.UpdateDocument;
 
@@ -10,11 +12,14 @@ public sealed class UpdateDocumentCommandHandler
         UpdateDocumentResponseDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly ICurrentUserService _currentUser;
 
     public UpdateDocumentCommandHandler(
-        IApplicationDbContext context)
+        IApplicationDbContext context,
+        ICurrentUserService currentUser)
     {
         _context = context;
+        _currentUser = currentUser;
     }
 
     public async Task<UpdateDocumentResponseDto> Handle(
@@ -47,6 +52,19 @@ public sealed class UpdateDocumentCommandHandler
                 "Expiry date must be greater than or equal to issue date.");
         }
 
+        // Task 7B.6.4: the update may change Type and/or DocumentNumber, so the
+        // resulting owner/type/number combination must not collide with an
+        // existing active document. The document being updated is excluded so a
+        // no-op update of the same values remains valid.
+        await DocumentDuplicateGuard.EnsureNotDuplicateAsync(
+            _context,
+            document.EmployeeId,
+            document.ClientEntityId,
+            request.Type,
+            request.DocumentNumber,
+            cancellationToken,
+            document.Id);
+
         document.Type = request.Type;
 
         document.DocumentNumber =
@@ -73,8 +91,32 @@ public sealed class UpdateDocumentCommandHandler
         document.IsActive =
             request.IsActive;
 
+        // A supplied (non-null) Details object replaces the stored value.
+        // Omitted and explicitly-null Details preserve the existing value.
+        if (request.Details is not null)
+        {
+            document.Details =
+                DetailsJson.ToStorage(request.Details);
+        }
+
         document.UpdatedAt =
             DateTime.UtcNow;
+
+        var auditLog = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = _currentUser.UserId,
+            Action = "DocumentUpdated",
+            EntityType = "Document",
+            EntityId = document.Id,
+            Description =
+                $"Document '{document.FileName ?? document.DocumentNumber}' was updated.",
+            CreatedAt = document.UpdatedAt,
+            UpdatedAt = document.UpdatedAt,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+        _context.AuditLogs.Add(auditLog);
 
         await _context.SaveChangesAsync(
             cancellationToken);
@@ -92,6 +134,7 @@ public sealed class UpdateDocumentCommandHandler
             document.ContentType,
             document.FileSize,
             document.IsActive,
-            document.UpdatedAt);
+            document.UpdatedAt,
+            DetailsJson.FromStorage(document.Details));
     }
 }

@@ -13,13 +13,16 @@ public sealed class CreateRenewalTaskCommandHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly IDuplicateDocumentTranslator _duplicateTranslator;
 
     public CreateRenewalTaskCommandHandler(
         IApplicationDbContext context,
-        ICurrentUserService currentUser)
+        ICurrentUserService currentUser,
+        IDuplicateDocumentTranslator duplicateTranslator)
     {
         _context = context;
         _currentUser = currentUser;
+        _duplicateTranslator = duplicateTranslator;
     }
 
     public async Task<CreateRenewalTaskResponseDto> Handle(
@@ -221,8 +224,35 @@ public sealed class CreateRenewalTaskCommandHandler
         _context.AuditLogs.Add(auditLog);
 
         // 11. Save
-        await _context.SaveChangesAsync(
-            cancellationToken);
+        //
+        // IX_renewal_tasks_DocumentId is a filtered unique index
+        // (IsDeleted = false AND Status != 6) and is the database-level
+        // backstop for "one live renewal task per document". The application
+        // check for an existing active task is a read followed by an insert, so
+        // two concurrent creates for the same document can both read empty and
+        // both proceed; PostgreSQL then refuses the second with 23505 on that
+        // index.
+        //
+        // The loser is translated to a 409 CONFLICT, which is exactly what it
+        // would have received had its check observed the winner's row, and is
+        // the same answer the sequential active-task guard gives. Left
+        // untranslated it was a DbUpdateException and therefore a 500, which
+        // told the caller "the server broke" for what is an ordinary
+        // already-taken outcome.
+        //
+        // Only that one constraint is translated. Every other DbUpdateException
+        // is rethrown untouched rather than relabelled as a domain conflict, so
+        // a genuine database fault is never disguised as a 409.
+        try
+        {
+            await _context.SaveChangesAsync(
+                cancellationToken);
+        }
+        catch (DbUpdateException exception)
+        {
+            throw _duplicateTranslator.Translate(exception) ??
+                  (Exception)exception;
+        }
 
         // 12. Response
         return new CreateRenewalTaskResponseDto(

@@ -13,5 +13,6 @@ public sealed record UpdateDocumentCommand(
     string? FileName,
     string? ContentType,
     long? FileSize,
-    bool IsActive
+    bool IsActive,
+    object? Details
 ) : IRequest<UpdateDocumentResponseDto>;

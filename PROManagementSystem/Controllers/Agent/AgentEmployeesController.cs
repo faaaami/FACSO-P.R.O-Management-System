@@ -13,7 +13,7 @@ namespace PROManagementSystem.Api.Controllers.Agent;
 
 [ApiController]
 [Route("api/v1/agent/employees")]
-[Authorize]
+[Authorize(Roles = "Agent")]
 public sealed class AgentEmployeesController : ControllerBase
 {
     private readonly ISender _sender;
@@ -91,6 +91,7 @@ public sealed class AgentEmployeesController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetDocuments(
         Guid id,

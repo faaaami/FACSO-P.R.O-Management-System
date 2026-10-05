@@ -5,9 +5,6 @@ public interface IDashboardReadRepository
     Task<DashboardSummaryDto> GetSummaryAsync(
         CancellationToken cancellationToken);
 
-    Task<DashboardStaffWorkloadDto> GetStaffWorkloadAsync(
-        CancellationToken cancellationToken);
-
     Task<DashboardActivityFeedResponseDto> GetActivityFeedAsync(
         int page,
         int pageSize,
@@ -33,18 +30,6 @@ public sealed record DashboardSummaryDto(
     int ActiveRenewalTasks,
     int PendingRetainerInvoices,
     int PendingServiceFeeInvoices
-);
-
-public sealed record DashboardStaffWorkloadItemDto(
-    Guid StaffId,
-    string StaffName,
-    int PendingTasks,
-    int InProgressTasks,
-    int BlockedTasks
-);
-
-public sealed record DashboardStaffWorkloadDto(
-    List<DashboardStaffWorkloadItemDto> Staff
 );
 
 public sealed record DashboardActivityFeedResponseDto(

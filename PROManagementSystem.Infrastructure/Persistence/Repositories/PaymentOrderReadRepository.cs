@@ -3,6 +3,8 @@ using Npgsql;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.PaymentOrders.Queries.GetPaymentOrders;
 using PROManagementSystem.Application.PaymentOrders.Queries.GetPaymentOrderById;
+using PROManagementSystem.Domain.Enums;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -19,7 +21,7 @@ public sealed class PaymentOrderReadRepository
 
     public async Task<GetPaymentOrdersResponseDto?> GetListAsync(
         Guid? clientCompanyId,
-        string? status,
+        PaymentStatus? status,
         int page,
         int pageSize,
         CancellationToken cancellationToken)
@@ -27,22 +29,22 @@ public sealed class PaymentOrderReadRepository
         var parameters = new DynamicParameters();
         var conditions = new List<string>
         {
-            "po.\"IsDeleted\" = false"
+            "po." + SqlColumnNames.PaymentOrderIsDeleted + " = false"
         };
 
         if (clientCompanyId.HasValue)
         {
             conditions.Add(
-                "po.\"ClientCompanyId\" = @ClientCompanyId");
+                "po." + SqlColumnNames.PaymentOrderClientCompanyId + " = @ClientCompanyId");
             parameters.Add(
                 "ClientCompanyId",
                 clientCompanyId.Value);
         }
 
-        if (!string.IsNullOrEmpty(status))
+        if (status.HasValue)
         {
-            conditions.Add("po.\"Status\" = @Status");
-            parameters.Add("Status", status);
+            conditions.Add("po." + SqlColumnNames.PaymentOrderStatus + " = @Status");
+            parameters.Add("Status", (int)status.Value);
         }
 
         var whereClause =
@@ -74,29 +76,28 @@ public sealed class PaymentOrderReadRepository
         var sql =
             $"""
             SELECT
-                po."Id" AS Id,
-                po."InvoiceType" AS InvoiceType,
-                po."RetainerInvoiceId" AS RetainerInvoiceId,
-                po."ServiceFeeInvoiceId" AS ServiceFeeInvoiceId,
-                po."ClientCompanyId" AS ClientCompanyId,
+                po.{SqlColumnNames.PaymentOrderId} AS Id,
+                po.{SqlColumnNames.PaymentOrderInvoiceType} AS InvoiceType,
+                po.{SqlColumnNames.PaymentOrderRetainerInvoiceId} AS RetainerInvoiceId,
+                po.{SqlColumnNames.PaymentOrderServiceFeeInvoiceId} AS ServiceFeeInvoiceId,
+                po.{SqlColumnNames.PaymentOrderClientCompanyId} AS ClientCompanyId,
                 cc.company_name AS ClientCompanyName,
-                po."Amount" AS Amount,
-                po."Currency" AS Currency,
-                po."Status" AS Status,
-                po."RazorpayOrderId" AS RazorpayOrderId,
-                po."PaidAt" AS PaidAt,
-                po."FailedAt" AS FailedAt,
-                po."CancelledAt" AS CancelledAt,
-                po."Notes" AS Notes,
-                po."CreatedAt" AS CreatedAt,
-                po."UpdatedAt" AS UpdatedAt
+                po.{SqlColumnNames.PaymentOrderAmount} AS Amount,
+                po.{SqlColumnNames.PaymentOrderCurrency} AS Currency,
+                po.{SqlColumnNames.PaymentOrderStatus} AS Status,
+                po.{SqlColumnNames.PaymentOrderRazorpayOrderId} AS RazorpayOrderId,
+                po.{SqlColumnNames.PaymentOrderPaidAt} AS PaidAt,
+                po.{SqlColumnNames.PaymentOrderFailedAt} AS FailedAt,
+                po.{SqlColumnNames.PaymentOrderCancelledAt} AS CancelledAt,
+                po.{SqlColumnNames.PaymentOrderNotes} AS Notes,
+                po.{SqlColumnNames.PaymentOrderCreatedAt} AS CreatedAt,
+                po.{SqlColumnNames.PaymentOrderUpdatedAt} AS UpdatedAt
             FROM payment_orders po
             INNER JOIN client_companies cc
-                ON cc.id = po."ClientCompanyId"
+                ON cc.id = po.{SqlColumnNames.PaymentOrderClientCompanyId}
             WHERE {whereClause}
-            ORDER BY po."CreatedAt" DESC
-            OFFSET @Offset ROWS
-            FETCH NEXT @PageSize ROWS ONLY;
+            ORDER BY po.{SqlColumnNames.PaymentOrderCreatedAt} DESC
+            {SqlSnippets.Pagination};
             """;
 
         var items =
@@ -119,30 +120,30 @@ public sealed class PaymentOrderReadRepository
         Guid id,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             SELECT
-                po."Id" AS Id,
-                po."InvoiceType" AS InvoiceType,
-                po."RetainerInvoiceId" AS RetainerInvoiceId,
-                po."ServiceFeeInvoiceId" AS ServiceFeeInvoiceId,
-                po."ClientCompanyId" AS ClientCompanyId,
+                po.{SqlColumnNames.PaymentOrderId} AS Id,
+                po.{SqlColumnNames.PaymentOrderInvoiceType} AS InvoiceType,
+                po.{SqlColumnNames.PaymentOrderRetainerInvoiceId} AS RetainerInvoiceId,
+                po.{SqlColumnNames.PaymentOrderServiceFeeInvoiceId} AS ServiceFeeInvoiceId,
+                po.{SqlColumnNames.PaymentOrderClientCompanyId} AS ClientCompanyId,
                 cc.company_name AS ClientCompanyName,
-                po."Amount" AS Amount,
-                po."Currency" AS Currency,
-                po."Status" AS Status,
-                po."RazorpayOrderId" AS RazorpayOrderId,
-                po."RazorpayPaymentId" AS RazorpayPaymentId,
-                po."PaidAt" AS PaidAt,
-                po."FailedAt" AS FailedAt,
-                po."CancelledAt" AS CancelledAt,
-                po."Notes" AS Notes,
-                po."CreatedAt" AS CreatedAt,
-                po."UpdatedAt" AS UpdatedAt
+                po.{SqlColumnNames.PaymentOrderAmount} AS Amount,
+                po.{SqlColumnNames.PaymentOrderCurrency} AS Currency,
+                po.{SqlColumnNames.PaymentOrderStatus} AS Status,
+                po.{SqlColumnNames.PaymentOrderRazorpayOrderId} AS RazorpayOrderId,
+                po.{SqlColumnNames.PaymentOrderRazorpayPaymentId} AS RazorpayPaymentId,
+                po.{SqlColumnNames.PaymentOrderPaidAt} AS PaidAt,
+                po.{SqlColumnNames.PaymentOrderFailedAt} AS FailedAt,
+                po.{SqlColumnNames.PaymentOrderCancelledAt} AS CancelledAt,
+                po.{SqlColumnNames.PaymentOrderNotes} AS Notes,
+                po.{SqlColumnNames.PaymentOrderCreatedAt} AS CreatedAt,
+                po.{SqlColumnNames.PaymentOrderUpdatedAt} AS UpdatedAt
             FROM payment_orders po
             INNER JOIN client_companies cc
-                ON cc.id = po."ClientCompanyId"
-            WHERE po."Id" = @Id
-              AND po."IsDeleted" = false;
+                ON cc.id = po.{SqlColumnNames.PaymentOrderClientCompanyId}
+            WHERE po.{SqlColumnNames.PaymentOrderId} = @Id
+              AND po.{SqlColumnNames.PaymentOrderIsDeleted} = false;
             """;
 
         await using var connection =

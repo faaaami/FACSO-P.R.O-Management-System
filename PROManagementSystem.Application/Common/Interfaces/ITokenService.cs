@@ -8,5 +8,7 @@ public interface ITokenService
 
     string GenerateRefreshToken();
 
+    string HashRefreshToken(string refreshToken);
+
     bool ValidateRefreshToken(User user, string refreshToken);
 }

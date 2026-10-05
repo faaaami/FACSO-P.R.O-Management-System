@@ -12,9 +12,8 @@ public interface IEmailService
         string resetToken,
         CancellationToken cancellationToken = default);
 
-    Task SendClientInvitationAsync(
+Task SendClientInvitationAsync(
         string email,
         string fullName,
-        string temporaryPassword,
         CancellationToken cancellationToken = default);
 }

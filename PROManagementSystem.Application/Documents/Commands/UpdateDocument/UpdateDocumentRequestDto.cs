@@ -11,5 +11,6 @@ public sealed record UpdateDocumentRequestDto(
     string? FileName,
     string? ContentType,
     long? FileSize,
-    bool IsActive
+    bool IsActive,
+    object? Details
 );

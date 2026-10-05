@@ -24,6 +24,7 @@ public sealed class GetGovFeeDisbursementByIdQueryHandler
         var result =
             await _readRepository.GetByIdAsync(
                 request.Id,
+                request.ClientCompanyId,
                 cancellationToken);
 
         if (result is null)

@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.Documents.Commands.ConfirmDocument;
 using PROManagementSystem.Domain.Entities;
@@ -31,179 +32,321 @@ public sealed class AgentConfirmExtractionCommandHandler
     {
         var agentId = _currentUser.UserId!.Value;
 
-        // 1. Find extraction draft
-        var extraction =
-            await _context.DocumentExtractions
-                .FirstOrDefaultAsync(
-                    x => x.Id == request.ExtractionId,
-                    cancellationToken);
+        await using var transaction =
+            await _context.BeginTransactionAsync(cancellationToken);
 
-        if (extraction is null)
+        var committed = false;
+
+        try
         {
-            throw new KeyNotFoundException(
-                "Document extraction was not found.");
-        }
+            // 1. Lock the extraction row. The SELECT ... FOR UPDATE is the
+            //    serialisation point for concurrent confirmations of the same
+            //    extraction: the second request blocks until the first commits
+            //    and then observes Status = "Confirmed". Raw SQL does not apply
+            //    global query filters, so the soft-delete predicate is explicit.
+            var locked =
+                await _context.DocumentExtractions
+                    .FromSqlInterpolated(
+                        $"SELECT * FROM document_extractions WHERE \"Id\" = {request.ExtractionId} AND \"IsDeleted\" = false FOR UPDATE")
+                    .ToListAsync(cancellationToken);
 
-        if (extraction.IsDeleted)
-        {
-            throw new InvalidOperationException(
-                "Document extraction has been deleted.");
-        }
+            var extraction = locked.SingleOrDefault();
 
-        if (extraction.Status != "Pending")
-        {
-            throw new InvalidOperationException(
-                $"Document extraction has already been processed. " +
-                $"Current status: {extraction.Status}.");
-        }
-
-        // 2. Exactly one owner must be supplied
-        var hasEmployee = request.EmployeeId.HasValue;
-        var hasClientEntity = request.ClientEntityId.HasValue;
-
-        if (hasEmployee == hasClientEntity)
-        {
-            throw new InvalidOperationException(
-                "Exactly one of EmployeeId or ClientEntityId must be provided.");
-        }
-
-        // 3. Verify the selected owner is within the agent's
-        //    strict task-linked scope. Out-of-scope -> 404.
-        if (request.EmployeeId.HasValue)
-        {
-            var employeeInScope =
-                await _scopeRepository.IsAgentEmployeeInScopeAsync(
-                    agentId,
-                    request.EmployeeId.Value,
-                    cancellationToken);
-
-            if (!employeeInScope)
+            if (extraction is null)
             {
                 throw new KeyNotFoundException(
-                    "Employee was not found.");
+                    "Document extraction was not found.");
             }
-        }
 
-        if (request.ClientEntityId.HasValue)
-        {
-            var entityInScope =
-                await _scopeRepository.IsAgentEntityInScopeAsync(
-                    agentId,
-                    request.ClientEntityId.Value,
-                    cancellationToken);
+            if (extraction.IsDeleted)
+            {
+                throw new InvalidOperationException(
+                    "Document extraction has been deleted.");
+            }
 
-            if (!entityInScope)
+            // Ownership gate (H1): an extraction created by another agent is
+            // hidden (404) just like any other out-of-scope resource. NULL
+            // CreatedBy rows are treated as legacy and keep the pre-H1 behavior
+            // (any in-scope agent may confirm them).
+            if (extraction.CreatedBy.HasValue &&
+                extraction.CreatedBy.Value != agentId)
             {
                 throw new KeyNotFoundException(
-                    "Client entity was not found.");
+                    "Document extraction was not found.");
             }
-        }
 
-        // 4. Validate the owner still exists and is active
-        if (request.EmployeeId.HasValue)
-        {
-            var employeeExists =
-                await _context.Employees.AnyAsync(
-                    x =>
-                        x.Id == request.EmployeeId.Value &&
-                        !x.IsDeleted,
+            if (extraction.Status != "Pending")
+            {
+                throw new InvalidOperationException(
+                    $"Document extraction has already been processed. " +
+                    $"Current status: {extraction.Status}.");
+            }
+
+            // Expiry enforcement: a Pending extraction past its ExpiresAt is
+            // marked Expired and rejected. NULL ExpiresAt means never-expiring
+            // (legacy rows).
+            var now = DateTime.UtcNow;
+
+            if (extraction.ExpiresAt.HasValue &&
+                extraction.ExpiresAt.Value <= now)
+            {
+                extraction.Status = "Expired";
+                extraction.UpdatedAt = now;
+
+                var expiryAudit = new AuditLog
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = agentId,
+                    Action = "DocumentExtractionExpired",
+                    EntityType = "DocumentExtraction",
+                    EntityId = extraction.Id,
+                    Description =
+                        "Document extraction has expired.",
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                    IsDeleted = false,
+                    DeletedAt = null
+                };
+                _context.AuditLogs.Add(expiryAudit);
+
+                // The Expired transition + audit are intentionally committed
+                // BEFORE the 409 is returned, preserving the existing
+                // observable behavior (ExtractionExpiryEnforcementTests).
+                await _context.SaveChangesAsync(
                     cancellationToken);
 
-            if (!employeeExists)
-            {
-                throw new KeyNotFoundException(
-                    "Employee was not found.");
+                await transaction.CommitAsync(cancellationToken);
+                committed = true;
+
+                throw new InvalidOperationException(
+                    "Document extraction has expired and cannot be confirmed.");
             }
-        }
 
-        if (request.ClientEntityId.HasValue)
-        {
-            var entityExists =
-                await _context.ClientEntities.AnyAsync(
-                    x =>
-                        x.Id == request.ClientEntityId.Value &&
-                        !x.IsDeleted,
-                    cancellationToken);
+            // 2. Exactly one owner must be supplied
+            var hasEmployee = request.EmployeeId.HasValue;
+            var hasClientEntity = request.ClientEntityId.HasValue;
 
-            if (!entityExists)
+            if (hasEmployee == hasClientEntity)
             {
-                throw new KeyNotFoundException(
-                    "Client entity was not found.");
+                throw new InvalidOperationException(
+                    "Exactly one of EmployeeId or ClientEntityId must be provided.");
             }
+
+            // 3. Verify the selected owner is within the agent's
+            //    strict task-linked scope. Out-of-scope -> 404.
+            if (request.EmployeeId.HasValue)
+            {
+                var employeeInScope =
+                    await _scopeRepository.IsAgentEmployeeInScopeAsync(
+                        agentId,
+                        request.EmployeeId.Value,
+                        cancellationToken);
+
+                if (!employeeInScope)
+                {
+                    throw new KeyNotFoundException(
+                        "Employee was not found.");
+                }
+            }
+
+            if (request.ClientEntityId.HasValue)
+            {
+                var entityInScope =
+                    await _scopeRepository.IsAgentEntityInScopeAsync(
+                        agentId,
+                        request.ClientEntityId.Value,
+                        cancellationToken);
+
+                if (!entityInScope)
+                {
+                    throw new KeyNotFoundException(
+                        "Client entity was not found.");
+                }
+            }
+
+            // 4. Validate the owner still exists and is active
+            if (request.EmployeeId.HasValue)
+            {
+                var employeeExists =
+                    await _context.Employees.AnyAsync(
+                        x =>
+                            x.Id == request.EmployeeId.Value &&
+                            !x.IsDeleted,
+                        cancellationToken);
+
+                if (!employeeExists)
+                {
+                    throw new KeyNotFoundException(
+                        "Employee was not found.");
+                }
+            }
+
+            if (request.ClientEntityId.HasValue)
+            {
+                var entityExists =
+                    await _context.ClientEntities.AnyAsync(
+                        x =>
+                            x.Id == request.ClientEntityId.Value &&
+                            !x.IsDeleted,
+                        cancellationToken);
+
+                if (!entityExists)
+                {
+                    throw new KeyNotFoundException(
+                        "Client entity was not found.");
+                }
+            }
+
+            // 5. Validate dates
+            if (request.ExpiryDate.HasValue &&
+                request.IssueDate.HasValue &&
+                request.ExpiryDate.Value < request.IssueDate.Value)
+            {
+                throw new InvalidOperationException(
+                    "Expiry date must be greater than or equal to issue date.");
+            }
+
+            // 5b. Reject when the same owner already holds an active document
+            //     with this type and document number.
+            await DocumentDuplicateGuard.EnsureNotDuplicateAsync(
+                _context,
+                request.EmployeeId,
+                request.ClientEntityId,
+                request.Type,
+                request.DocumentNumber,
+                cancellationToken);
+
+            // 6. Create the real document
+            // The server-generated extraction reference is authoritative. Only
+            // legacy extractions without a stored reference fall back to the
+            // client-supplied file location (pre-storage behavior).
+            var serverReference = extraction.FileUrl;
+
+            var document = new Document
+            {
+                Id = Guid.NewGuid(),
+
+                EmployeeId = request.EmployeeId,
+
+                ClientEntityId = request.ClientEntityId,
+
+                Type = request.Type,
+
+                DocumentNumber = request.DocumentNumber.Trim(),
+
+                IssueDate = request.IssueDate,
+
+                ExpiryDate = request.ExpiryDate,
+
+                FileUrl =
+                    serverReference ??
+                    request.FileUrl?.Trim(),
+
+                FileName =
+                    serverReference is null
+                        ? request.FileName?.Trim()
+                        : extraction.FileName?.Trim() ??
+                          request.FileName?.Trim(),
+
+                ContentType =
+                    serverReference is null
+                        ? request.ContentType?.Trim()
+                        : extraction.ContentType?.Trim() ??
+                          request.ContentType?.Trim(),
+
+                FileSize =
+                    serverReference is null
+                        ? request.FileSize
+                        : extraction.FileSize,
+
+                Details =
+                    DetailsJson.ToStorage(request.Details),
+
+                IsActive = true,
+
+                IsDeleted = false,
+
+                DeletedAt = null,
+
+                CreatedAt = now,
+
+                UpdatedAt = now
+            };
+
+            _context.Documents.Add(document);
+
+            // 7. Mark AI extraction as confirmed
+            extraction.Status = "Confirmed";
+            extraction.UpdatedAt = now;
+
+            // 7b. Record confirmation + created document
+            var confirmationAudit = new AuditLog
+            {
+                Id = Guid.NewGuid(),
+                UserId = agentId,
+                Action = "DocumentExtractionConfirmed",
+                EntityType = "DocumentExtraction",
+                EntityId = extraction.Id,
+                Description =
+                    "Document extraction was confirmed.",
+                CreatedAt = now,
+                UpdatedAt = now,
+                IsDeleted = false,
+                DeletedAt = null
+            };
+            _context.AuditLogs.Add(confirmationAudit);
+
+            var createdAudit = new AuditLog
+            {
+                Id = Guid.NewGuid(),
+                UserId = agentId,
+                Action = "DocumentCreated",
+                EntityType = "Document",
+                EntityId = document.Id,
+                Description =
+                    $"Document '{document.FileName ?? document.DocumentNumber}' was created.",
+                CreatedAt = now,
+                UpdatedAt = now,
+                IsDeleted = false,
+                DeletedAt = null
+            };
+            _context.AuditLogs.Add(createdAudit);
+
+            // 8. Save both changes
+            await _context.SaveChangesAsync(
+                cancellationToken);
+
+            // 8b. Commit: document + extraction status + audits atomically.
+            await transaction.CommitAsync(cancellationToken);
+            committed = true;
+
+            // 9. Return created document
+            return new ConfirmDocumentResponseDto(
+                document.Id,
+                extraction.Id,
+                document.EmployeeId,
+                document.ClientEntityId,
+                document.Type,
+                document.DocumentNumber,
+                document.IssueDate,
+                document.ExpiryDate,
+                document.FileUrl,
+                document.FileName,
+                document.ContentType,
+                document.FileSize,
+                document.IsActive,
+                document.CreatedAt,
+                DetailsJson.FromStorage(document.Details));
         }
-
-        // 5. Validate dates
-        if (request.ExpiryDate.HasValue &&
-            request.IssueDate.HasValue &&
-            request.ExpiryDate.Value < request.IssueDate.Value)
+        catch
         {
-            throw new InvalidOperationException(
-                "Expiry date must be greater than or equal to issue date.");
+            if (!committed)
+            {
+                await transaction.RollbackAsync(
+                    CancellationToken.None);
+            }
+
+            throw;
         }
-
-        // 6. Create the real document
-        var now = DateTime.UtcNow;
-
-        var document = new Document
-        {
-            Id = Guid.NewGuid(),
-
-            EmployeeId = request.EmployeeId,
-
-            ClientEntityId = request.ClientEntityId,
-
-            Type = request.Type,
-
-            DocumentNumber = request.DocumentNumber.Trim(),
-
-            IssueDate = request.IssueDate,
-
-            ExpiryDate = request.ExpiryDate,
-
-            FileUrl = request.FileUrl?.Trim(),
-
-            FileName = request.FileName?.Trim(),
-
-            ContentType = request.ContentType?.Trim(),
-
-            FileSize = request.FileSize,
-
-            IsActive = true,
-
-            IsDeleted = false,
-
-            DeletedAt = null,
-
-            CreatedAt = now,
-
-            UpdatedAt = now
-        };
-
-        _context.Documents.Add(document);
-
-        // 7. Mark AI extraction as confirmed
-        extraction.Status = "Confirmed";
-        extraction.UpdatedAt = now;
-
-        // 8. Save both changes
-        await _context.SaveChangesAsync(
-            cancellationToken);
-
-        // 9. Return created document
-        return new ConfirmDocumentResponseDto(
-            document.Id,
-            extraction.Id,
-            document.EmployeeId,
-            document.ClientEntityId,
-            document.Type,
-            document.DocumentNumber,
-            document.IssueDate,
-            document.ExpiryDate,
-            document.FileUrl,
-            document.FileName,
-            document.ContentType,
-            document.FileSize,
-            document.IsActive,
-            document.CreatedAt);
     }
 }

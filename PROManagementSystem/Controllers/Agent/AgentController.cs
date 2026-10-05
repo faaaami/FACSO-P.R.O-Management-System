@@ -9,7 +9,7 @@ namespace PROManagementSystem.Api.Controllers.Agent;
 
 [ApiController]
 [Route("api/v1/agent")]
-[Authorize]
+[Authorize(Roles = "Agent")]
 public sealed class AgentController : ControllerBase
 {
     private readonly ISender _sender;

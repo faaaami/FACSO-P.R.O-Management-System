@@ -5,7 +5,10 @@ namespace PROManagementSystem.Application.ServiceRequests.Queries.GetServiceRequ
 public sealed record GetServiceRequestResponseDto(
     Guid Id,
     Guid ClientCompanyId,
-    Guid DocumentId,
+    ServiceRequestType Type,
+    Guid? EmployeeId,
+    Guid? EntityId,
+    Guid? DocumentId,
     ServiceRequestStatus Status,
     string? Description,
     string? RejectionReason,

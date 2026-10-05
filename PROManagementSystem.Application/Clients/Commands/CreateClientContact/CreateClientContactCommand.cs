@@ -6,5 +6,6 @@ public sealed record CreateClientContactCommand(
     Guid ClientCompanyId,
     string FullName,
     string Email,
-    string? Phone
+    string? Phone,
+    string Password
 ) : IRequest<CreateClientContactResponseDto>;

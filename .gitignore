@@ -48,6 +48,13 @@ Thumbs.db
 *.log
 
 # ==============================
+# Local file storage runtime dir
+# (resolved under the API content root; must not be committed)
+# ==============================
+
+/PROManagementSystem/storage/
+
+# ==============================
 # IDE
 # ==============================
 

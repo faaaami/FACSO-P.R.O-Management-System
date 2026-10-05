@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using PROManagementSystem.Domain.Entities;
 
 namespace PROManagementSystem.Application.Common.Interfaces;
@@ -31,5 +32,13 @@ public interface IApplicationDbContext
     DbSet<PaymentOrder> PaymentOrders { get; }
 
     Task<int> SaveChangesAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Begins an explicit database transaction. Used by financial flows that
+    /// must commit multiple entity changes atomically and serialise
+    /// concurrent row-level updates (e.g. webhook payment completion).
+    /// </summary>
+    Task<IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default);
 }

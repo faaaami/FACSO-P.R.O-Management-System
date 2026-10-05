@@ -16,5 +16,6 @@ public sealed record ConfirmDocumentResponseDto(
     string? ContentType,
     long? FileSize,
     bool IsActive,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    object Details
 );

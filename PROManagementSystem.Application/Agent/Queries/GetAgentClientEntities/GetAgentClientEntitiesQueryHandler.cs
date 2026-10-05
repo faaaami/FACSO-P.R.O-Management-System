@@ -26,6 +26,20 @@ public sealed class GetAgentClientEntitiesQueryHandler
     {
         var agentId = _currentUser.UserId!.Value;
 
+        // Strict task-linked scope check on the parent client company.
+        // Out-of-scope or nonexistent parent -> 404, never an empty list.
+        var clientInScope =
+            await _repository.IsAgentClientInScopeAsync(
+                agentId,
+                request.ClientId,
+                cancellationToken);
+
+        if (!clientInScope)
+        {
+            throw new KeyNotFoundException(
+                "Client company was not found.");
+        }
+
         return await _repository.GetAgentClientEntitiesAsync(
             agentId,
             request.ClientId,

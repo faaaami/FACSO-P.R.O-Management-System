@@ -1,7 +1,9 @@
 ﻿using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using PROManagementSystem.Api.Common;
+using PROManagementSystem.Api.RateLimiting;
 using PROManagementSystem.Application.Auth.Commands.Login;
 using PROManagementSystem.Application.Auth.Commands.Register;
 using PROManagementSystem.Application.Auth.Commands.Logout;
@@ -14,6 +16,7 @@ namespace PROManagementSystem.Api.Controllers.Auth;
 
 [ApiController]
 [Route("api/v1/auth")]
+[EnableRateLimiting(AuthenticationRateLimiting.PolicyName)]
 public sealed class AuthController : ControllerBase
 {
     private readonly ISender _sender;
@@ -79,7 +82,7 @@ public sealed class AuthController : ControllerBase
             cancellationToken);
 
         return Ok(
-            ApiResponse<object>.SuccessResponse(null));
+            ApiResponse<object?>.SuccessResponse(null));
     }
 
     [HttpPost("verify-email")]

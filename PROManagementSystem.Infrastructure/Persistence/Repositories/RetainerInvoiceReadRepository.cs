@@ -4,6 +4,7 @@ using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.RetainerInvoices.Queries.GetRetainerInvoiceById;
 using PROManagementSystem.Application.RetainerInvoices.Queries.GetRetainerInvoices;
 using PROManagementSystem.Domain.Enums;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -30,7 +31,7 @@ public sealed class RetainerInvoiceReadRepository
 
         var whereConditions = new List<string>
         {
-            "ri.\"IsDeleted\" = false"
+            "ri." + SqlColumnNames.RetainerInvoiceIsDeleted + " = false"
         };
 
         var parameters = new DynamicParameters();
@@ -38,7 +39,7 @@ public sealed class RetainerInvoiceReadRepository
         if (clientCompanyId.HasValue)
         {
             whereConditions.Add(
-                "ri.\"ClientCompanyId\" = @ClientCompanyId");
+                "ri." + SqlColumnNames.RetainerInvoiceClientCompanyId + " = @ClientCompanyId");
 
             parameters.Add(
                 "ClientCompanyId",
@@ -48,7 +49,7 @@ public sealed class RetainerInvoiceReadRepository
         if (serviceContractId.HasValue)
         {
             whereConditions.Add(
-                "ri.\"ServiceContractId\" = @ServiceContractId");
+                "ri." + SqlColumnNames.RetainerInvoiceServiceContractId + " = @ServiceContractId");
 
             parameters.Add(
                 "ServiceContractId",
@@ -58,7 +59,7 @@ public sealed class RetainerInvoiceReadRepository
         if (status.HasValue)
         {
             whereConditions.Add(
-                "ri.\"Status\" = @Status");
+                "ri." + SqlColumnNames.RetainerInvoiceStatus + " = @Status");
 
             parameters.Add(
                 "Status",
@@ -79,27 +80,26 @@ public sealed class RetainerInvoiceReadRepository
 
         var dataSql = $"""
             SELECT
-                ri."Id" AS Id,
-                ri."ClientCompanyId" AS ClientCompanyId,
-                ri."ServiceContractId" AS ServiceContractId,
-                ri."InvoiceNumber" AS InvoiceNumber,
-                ri."InvoiceDate" AS InvoiceDate,
-                ri."DueDate" AS DueDate,
-                ri."PeriodStart" AS PeriodStart,
-                ri."PeriodEnd" AS PeriodEnd,
-                ri."Amount" AS Amount,
-                ri."Currency" AS Currency,
-                ri."Status" AS Status,
-                ri."Notes" AS Notes,
-                ri."PaidAt" AS PaidAt,
-                ri."VoidedAt" AS VoidedAt,
-                ri."VoidReason" AS VoidReason,
-                ri."CreatedAt" AS CreatedAt
+                ri.{SqlColumnNames.RetainerInvoiceId} AS Id,
+                ri.{SqlColumnNames.RetainerInvoiceClientCompanyId} AS ClientCompanyId,
+                ri.{SqlColumnNames.RetainerInvoiceServiceContractId} AS ServiceContractId,
+                ri.{SqlColumnNames.RetainerInvoiceInvoiceNumber} AS InvoiceNumber,
+                ri.{SqlColumnNames.RetainerInvoiceInvoiceDate} AS InvoiceDate,
+                ri.{SqlColumnNames.RetainerInvoiceDueDate} AS DueDate,
+                ri.{SqlColumnNames.RetainerInvoicePeriodStart} AS PeriodStart,
+                ri.{SqlColumnNames.RetainerInvoicePeriodEnd} AS PeriodEnd,
+                ri.{SqlColumnNames.RetainerInvoiceAmount} AS Amount,
+                ri.{SqlColumnNames.RetainerInvoiceCurrency} AS Currency,
+                ri.{SqlColumnNames.RetainerInvoiceStatus} AS Status,
+                ri.{SqlColumnNames.RetainerInvoiceNotes} AS Notes,
+                ri.{SqlColumnNames.RetainerInvoicePaidAt} AS PaidAt,
+                ri.{SqlColumnNames.RetainerInvoiceVoidedAt} AS VoidedAt,
+                ri.{SqlColumnNames.RetainerInvoiceVoidReason} AS VoidReason,
+                ri.{SqlColumnNames.RetainerInvoiceCreatedAt} AS CreatedAt
             FROM retainer_invoices ri
             {whereClause}
-            ORDER BY ri."CreatedAt" DESC
-            OFFSET @Offset
-            LIMIT @PageSize;
+            ORDER BY ri.{SqlColumnNames.RetainerInvoiceCreatedAt} DESC
+            {SqlSnippets.Pagination};
             """;
 
         parameters.Add("Offset", offset);
@@ -135,36 +135,61 @@ public sealed class RetainerInvoiceReadRepository
 
     public async Task<GetRetainerInvoiceByIdResponseDto?> GetByIdAsync(
         Guid id,
+        Guid? clientCompanyId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var parameters = new DynamicParameters();
+        parameters.Add("Id", id);
+
+        var conditions = new List<string>
+        {
+            "ri." + SqlColumnNames.RetainerInvoiceId + " = @Id",
+            "ri." + SqlColumnNames.RetainerInvoiceIsDeleted + " = false"
+        };
+
+        if (clientCompanyId.HasValue)
+        {
+            conditions.Add(
+                "ri." + SqlColumnNames.RetainerInvoiceClientCompanyId + " = @ClientCompanyId");
+            parameters.Add("ClientCompanyId", clientCompanyId.Value);
+        }
+
+        var whereClause =
+            string.Join(" AND ", conditions);
+
+        var sql = $"""
             SELECT
-                ri."Id" AS Id,
-                ri."ClientCompanyId" AS ClientCompanyId,
+                ri.{SqlColumnNames.RetainerInvoiceId} AS Id,
+                ri.{SqlColumnNames.RetainerInvoiceClientCompanyId} AS ClientCompanyId,
                 cc.company_name AS ClientCompanyName,
-                ri."ServiceContractId" AS ServiceContractId,
-                sc."ContractNumber" AS ContractNumber,
-                ri."InvoiceNumber" AS InvoiceNumber,
-                ri."InvoiceDate" AS InvoiceDate,
-                ri."DueDate" AS DueDate,
-                ri."PeriodStart" AS PeriodStart,
-                ri."PeriodEnd" AS PeriodEnd,
-                ri."Amount" AS Amount,
-                ri."Currency" AS Currency,
-                ri."Status" AS Status,
-                ri."Notes" AS Notes,
-                ri."PaidAt" AS PaidAt,
-                ri."VoidedAt" AS VoidedAt,
-                ri."VoidReason" AS VoidReason,
-                ri."CreatedAt" AS CreatedAt,
-                ri."UpdatedAt" AS UpdatedAt
+                ri.{SqlColumnNames.RetainerInvoiceServiceContractId} AS ServiceContractId,
+                sc.{SqlColumnNames.ServiceContractContractNumber} AS ContractNumber,
+                ri.{SqlColumnNames.RetainerInvoiceInvoiceNumber} AS InvoiceNumber,
+                ri.{SqlColumnNames.RetainerInvoiceInvoiceDate} AS InvoiceDate,
+                ri.{SqlColumnNames.RetainerInvoiceDueDate} AS DueDate,
+                ri.{SqlColumnNames.RetainerInvoicePeriodStart} AS PeriodStart,
+                ri.{SqlColumnNames.RetainerInvoicePeriodEnd} AS PeriodEnd,
+                ri.{SqlColumnNames.RetainerInvoiceAmount} AS Amount,
+                ri.{SqlColumnNames.RetainerInvoiceCurrency} AS Currency,
+                ri.{SqlColumnNames.RetainerInvoiceStatus} AS Status,
+                ri.{SqlColumnNames.RetainerInvoiceNotes} AS Notes,
+                ri.{SqlColumnNames.RetainerInvoicePaidAt} AS PaidAt,
+                ri.{SqlColumnNames.RetainerInvoiceVoidedAt} AS VoidedAt,
+                ri.{SqlColumnNames.RetainerInvoiceVoidReason} AS VoidReason,
+                ri.{SqlColumnNames.RetainerInvoiceCreatedAt} AS CreatedAt,
+                ri.{SqlColumnNames.RetainerInvoiceUpdatedAt} AS UpdatedAt,
+                po.{SqlColumnNames.PaymentOrderId} AS PaymentOrderId,
+                po.{SqlColumnNames.PaymentOrderStatus} AS PaymentOrderStatus,
+                po.{SqlColumnNames.PaymentOrderRazorpayOrderId} AS RazorpayOrderId
             FROM retainer_invoices ri
             INNER JOIN client_companies cc
-                ON cc.id = ri."ClientCompanyId"
+                ON cc.id = ri.{SqlColumnNames.RetainerInvoiceClientCompanyId}
             INNER JOIN service_contracts sc
-                ON sc."Id" = ri."ServiceContractId"
-            WHERE ri."Id" = @Id
-              AND ri."IsDeleted" = false;
+                ON sc.{SqlColumnNames.ServiceContractId} = ri.{SqlColumnNames.RetainerInvoiceServiceContractId}
+            LEFT JOIN payment_orders po
+                ON po.{SqlColumnNames.PaymentOrderRetainerInvoiceId} = ri.{SqlColumnNames.RetainerInvoiceId}
+                AND po.{SqlColumnNames.PaymentOrderIsDeleted} = false
+            WHERE {whereClause};
             """;
 
         await using var connection =
@@ -175,7 +200,7 @@ public sealed class RetainerInvoiceReadRepository
             GetRetainerInvoiceByIdResponseDto>(
             new CommandDefinition(
                 sql,
-                new { Id = id },
+                parameters,
                 cancellationToken:
                     cancellationToken));
     }

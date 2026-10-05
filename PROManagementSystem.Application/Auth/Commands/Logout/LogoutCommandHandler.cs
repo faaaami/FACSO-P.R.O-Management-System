@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Exceptions;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Domain.Entities;
 
 namespace PROManagementSystem.Application.Auth.Commands.Logout;
 
@@ -23,10 +24,13 @@ public sealed class LogoutCommandHandler
         LogoutCommand request,
         CancellationToken cancellationToken)
     {
-        // 1. Find the user using the refresh token
+        // 1. Find the user using the hash of the refresh token
+        var refreshTokenHash =
+            _tokenService.HashRefreshToken(request.RefreshToken);
+
         var user = await _context.Users
             .FirstOrDefaultAsync(
-                x => x.RefreshToken == request.RefreshToken,
+                x => x.RefreshToken == refreshTokenHash,
                 cancellationToken);
 
         if (user is null)
@@ -51,7 +55,24 @@ public sealed class LogoutCommandHandler
         user.RefreshTokenExpiry = null;
         user.UpdatedAt = DateTime.UtcNow;
 
-        // 4. Save changes
+        // 4. Record the logout
+        var auditLog = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            Action = "Logout",
+            EntityType = "User",
+            EntityId = user.Id,
+            Description =
+                "User logged out.",
+            CreatedAt = user.UpdatedAt,
+            UpdatedAt = user.UpdatedAt,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+        _context.AuditLogs.Add(auditLog);
+
+        // 5. Save changes
         await _context.SaveChangesAsync(
             cancellationToken);
     }

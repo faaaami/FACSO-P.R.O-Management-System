@@ -2,6 +2,7 @@
 using Npgsql;
 using PROManagementSystem.Application.Clients.Queries.GetClientContacts;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -77,9 +78,8 @@ public sealed class ClientContactReadRepository
                 created_at AS CreatedAt
             FROM users
             {whereClause}
-            ORDER BY created_at DESC
-            OFFSET @Offset
-            LIMIT @PageSize;
+            ORDER BY created_at DESC, id ASC
+            {SqlSnippets.Pagination};
             """;
 
         parameters.Add("Offset", offset);

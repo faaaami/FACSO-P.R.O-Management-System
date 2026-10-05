@@ -15,5 +15,6 @@ public sealed record UpdateDocumentResponseDto(
     string? ContentType,
     long? FileSize,
     bool IsActive,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    object Details
 );

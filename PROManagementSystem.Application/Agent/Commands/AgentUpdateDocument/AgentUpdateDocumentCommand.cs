@@ -12,5 +12,6 @@ public sealed record AgentUpdateDocumentCommand(
     string? FileName,
     string? ContentType,
     long? FileSize,
+    object? Details,
     IReadOnlySet<string> PresentProperties
 ) : IRequest<UpdateDocumentResponseDto>;

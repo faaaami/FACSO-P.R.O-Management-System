@@ -24,10 +24,13 @@ public sealed class RefreshTokenCommandHandler
         RefreshTokenCommand request,
         CancellationToken cancellationToken)
     {
-        // 1. Find the user by refresh token
+        // 1. Find the user by the hash of the refresh token
+        var refreshTokenHash =
+            _tokenService.HashRefreshToken(request.RefreshToken);
+
         var user = await _context.Users
             .FirstOrDefaultAsync(
-                x => x.RefreshToken == request.RefreshToken,
+                x => x.RefreshToken == refreshTokenHash,
                 cancellationToken);
 
         if (user is null)
@@ -54,6 +57,18 @@ public sealed class RefreshTokenCommandHandler
                 "Your account is inactive.");
         }
 
+        if (!user.IsApproved)
+        {
+            throw new ForbiddenAccessException(
+                "Your account has not been approved yet.");
+        }
+
+        if (!user.EmailVerified)
+        {
+            throw new ForbiddenAccessException(
+                "Please verify your email before logging in.");
+        }
+
         // 4. Generate a new access token
         var accessToken = _tokenService.GenerateAccessToken(user);
 
@@ -61,19 +76,37 @@ public sealed class RefreshTokenCommandHandler
         var newRefreshToken =
             _tokenService.GenerateRefreshToken();
 
-        // 6. Rotate the refresh token
-        user.RefreshToken = newRefreshToken;
+        // 6. Rotate the refresh token (store only the hash)
+        user.RefreshToken =
+            _tokenService.HashRefreshToken(newRefreshToken);
 
         user.RefreshTokenExpiry =
             DateTime.UtcNow.AddDays(7);
 
         user.UpdatedAt = DateTime.UtcNow;
 
-        // 7. Save the new refresh token
+        // 7. Record the refresh
+        var auditLog = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            Action = "RefreshTokenIssued",
+            EntityType = "User",
+            EntityId = user.Id,
+            Description =
+                "New refresh token issued.",
+            CreatedAt = user.UpdatedAt,
+            UpdatedAt = user.UpdatedAt,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+        _context.AuditLogs.Add(auditLog);
+
+        // 8. Save the new refresh token
         await _context.SaveChangesAsync(
             cancellationToken);
 
-        // 8. Return the new token pair
+        // 9. Return the new token pair
         return new RefreshTokenResponseDto(
             accessToken,
             newRefreshToken,

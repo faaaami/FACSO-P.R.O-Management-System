@@ -41,37 +41,52 @@ public sealed class UpdateStaffCommandHandler
                 "Staff member was not found.");
         }
 
-        // 2. Normalize email
-        var normalizedEmail =
-            request.Email.Trim().ToLowerInvariant();
+        // 2. Normalize email, but ONLY when the caller supplied one.
+        // PATCH semantics: an omitted field is "leave this alone", not
+        // "write null" and not "write false".
+        string? normalizedEmail = null;
 
-        // 3. Check duplicate email
-        var emailExists =
-            await _context.Users.AnyAsync(
-                x =>
-                    x.Id != request.StaffId &&
-                    x.Email.ToLower() == normalizedEmail &&
-                    !x.IsDeleted,
-                cancellationToken);
-
-        if (emailExists)
+        if (!string.IsNullOrWhiteSpace(request.Email))
         {
-            throw new InvalidOperationException(
-                "A user with this email already exists.");
+            normalizedEmail =
+                request.Email.Trim().ToLowerInvariant();
+
+            // 3. Check duplicate email (only meaningful when supplied)
+            var emailExists =
+                await _context.Users.AnyAsync(
+                    x =>
+                        x.Id != request.StaffId &&
+                        x.Email.ToLower() == normalizedEmail &&
+                        !x.IsDeleted,
+                    cancellationToken);
+
+            if (emailExists)
+            {
+                throw new InvalidOperationException(
+                    "A user with this email already exists.");
+            }
         }
 
-        // 4. Update staff details
+        // 4. Update staff details (supplied fields only)
         staff.FullName =
             request.FullName.Trim();
 
-        staff.Email =
-            normalizedEmail;
+        if (normalizedEmail is not null)
+        {
+            staff.Email =
+                normalizedEmail;
+        }
 
         staff.Phone =
             request.Phone?.Trim();
 
-        staff.IsApproved =
-            request.IsApproved;
+        // IsApproved is written ONLY when explicitly supplied. Writing it
+        // unconditionally is what let a partial payload revoke approval.
+        if (request.IsApproved.HasValue)
+        {
+            staff.IsApproved =
+                request.IsApproved.Value;
+        }
 
         // IMPORTANT:
         // Role remains UserRole.Agent.

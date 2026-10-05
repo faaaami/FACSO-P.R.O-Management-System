@@ -5,6 +5,7 @@ using PROManagementSystem.Application.Employees.Queries.GetEmployeeById;
 using PROManagementSystem.Application.Employees.Queries.GetEmployeeDocuments;
 using PROManagementSystem.Application.Employees.Queries.GetEmployees;
 using PROManagementSystem.Application.Agent.Queries.GetAgentDocuments;
+using PROManagementSystem.Application.Documents.Queries.GetDocumentDependencies;
 using PROManagementSystem.Application.Documents.Queries.GetExpiringDocuments;
 using PROManagementSystem.Application.Staff.Queries.GetAllStaffWorkload;
 using PROManagementSystem.Application.Staff.Queries.GetStaffWorkload;
@@ -23,6 +24,8 @@ public interface IRenewalTaskReadRepository
         RenewalTaskStatus? status,
         Guid? assignedStaffId,
         Guid? clientCompanyId,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken);
 
     Task<GetRenewalTaskByIdResponseDto?> GetByIdAsync(
@@ -36,6 +39,16 @@ public interface IRenewalTaskReadRepository
     Task<GetRenewalTaskHistoryResponseDto?> GetHistoryAsync(
     Guid taskId,
     CancellationToken cancellationToken);
+
+    Task<GetRenewalTaskByIdResponseDto?> GetByIdForCompanyAsync(
+        Guid taskId,
+        Guid clientCompanyId,
+        CancellationToken cancellationToken);
+
+    Task<GetRenewalTaskHistoryResponseDto?> GetHistoryForCompanyAsync(
+        Guid taskId,
+        Guid clientCompanyId,
+        CancellationToken cancellationToken);
 
     Task<GetStaffWorkloadResponseDto?> GetStaffWorkloadAsync(
     Guid staffId,
@@ -123,8 +136,14 @@ public interface IRenewalTaskReadRepository
         Guid entityId,
         CancellationToken cancellationToken);
 
-    Task<HashSet<Guid>> GetAgentScopedDocumentIdsAsync(
+    Task<bool> IsAgentClientInScopeAsync(
         Guid agentId,
+        Guid companyId,
+        CancellationToken cancellationToken);
+
+    Task<GetDocumentDependenciesResponseDto> GetAgentDocumentDependenciesAsync(
+        Guid agentId,
+        Guid documentId,
         CancellationToken cancellationToken);
 
     Task<GetAgentDocumentsResponseDto> GetAgentDocumentsAsync(

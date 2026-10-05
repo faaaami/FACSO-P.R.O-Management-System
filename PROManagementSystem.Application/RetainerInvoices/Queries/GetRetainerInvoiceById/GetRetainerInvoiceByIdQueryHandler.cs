@@ -23,6 +23,7 @@ public sealed class GetRetainerInvoiceByIdQueryHandler
         var invoice =
             await _repository.GetByIdAsync(
                 request.Id,
+                request.ClientCompanyId,
                 cancellationToken);
 
         if (invoice is null)

@@ -31,14 +31,20 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
     protected WebApplicationFactory<Program> Factory => _fixture.Factory;
 
+    protected DatabaseFixture Fixture => _fixture;
+
     /// <summary>Client authenticated via the TestIdentity scheme.</summary>
     protected HttpClient ScopeClient { get; private set; } = null!;
 
     /// <summary>Client using the production JWT pipeline.</summary>
     protected HttpClient AuthClient { get; private set; } = null!;
 
-    public async Task InitializeAsync()
+    private WebApplicationFactory<Program>? _derivedFactory;
+
+    public virtual async Task InitializeAsync()
     {
+        FakeRazorpayService.ResetCreateOrderTracking();
+
         await ResetDatabaseAsync();
         await SeedAsync();
 
@@ -46,11 +52,15 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         AuthClient = Factory.CreateClient();
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
         ScopeClient?.Dispose();
         AuthClient?.Dispose();
-        return Task.CompletedTask;
+
+        if (_derivedFactory is not null)
+        {
+            await _derivedFactory.DisposeAsync();
+        }
     }
 
     // ------------------------------------------------------------------
@@ -63,10 +73,13 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
         const string tables =
             "\"renewal_task_histories\", \"renewal_step_logs\", " +
-            "\"renewal_tasks\", \"document_dependencies\", " +
-            "\"document_extractions\", \"document_versions\", " +
-            "\"notifications\", \"documents\", \"employees\", " +
-            "\"client_entities\", \"client_companies\", \"audit_logs\", " +
+            "\"renewal_tasks\", \"service_requests\", " +
+            "\"document_dependencies\", \"document_extractions\", " +
+            "\"document_versions\", \"notifications\", \"documents\", " +
+            "\"retainer_invoices\", \"service_fee_invoices\", " +
+            "\"gov_fee_disbursements\", \"payment_orders\", " +
+            "\"employees\", \"client_entities\", \"client_companies\", " +
+            "\"service_contracts\", \"audit_logs\", " +
             "\"users\"";
 
         await db.Database.ExecuteSqlRawAsync(
@@ -84,7 +97,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
     private HttpClient BuildScopeClient()
     {
-        return Factory
+        _derivedFactory = Factory
             .WithWebHostBuilder(builder =>
             {
                 builder.ConfigureServices(services =>
@@ -101,8 +114,9 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                             TestIdentityService>(
                             TestIdentityService.SchemeName, _ => { });
                 });
-            })
-            .CreateClient();
+            });
+
+        return _derivedFactory.CreateClient();
     }
 
     // ------------------------------------------------------------------

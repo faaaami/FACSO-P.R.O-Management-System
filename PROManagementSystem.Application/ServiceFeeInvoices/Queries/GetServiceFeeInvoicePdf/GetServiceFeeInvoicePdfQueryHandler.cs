@@ -29,6 +29,7 @@ public sealed class GetServiceFeeInvoicePdfQueryHandler
         var invoice =
             await _readRepository.GetByIdAsync(
                 request.Id,
+                request.ClientCompanyId,
                 cancellationToken);
 
         if (invoice is null)

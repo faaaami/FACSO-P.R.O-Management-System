@@ -82,7 +82,7 @@ public sealed class CreateStaffCommandHandler
 
             IsApproved = true,
 
-            EmailVerified = false,
+            EmailVerified = true,
 
             ClientCompanyId = null,
 

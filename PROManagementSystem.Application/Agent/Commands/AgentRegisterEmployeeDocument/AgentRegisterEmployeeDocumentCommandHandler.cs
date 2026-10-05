@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.Employees.Commands.CreateEmployeeDocument;
 using PROManagementSystem.Domain.Entities;
@@ -62,7 +63,17 @@ public sealed class AgentRegisterEmployeeDocumentCommandHandler
                 "Employee was not found.");
         }
 
-        // 2. Create document
+        // 2. Reject when the same owner already holds an active document
+        //    with this type and document number.
+        await DocumentDuplicateGuard.EnsureNotDuplicateAsync(
+            _context,
+            request.EmployeeId,
+            null,
+            request.Type,
+            request.DocumentNumber,
+            cancellationToken);
+
+        // 3. Create document
         var now = DateTime.UtcNow;
 
         var document = new Document
@@ -89,6 +100,9 @@ public sealed class AgentRegisterEmployeeDocumentCommandHandler
 
             FileSize = request.FileSize,
 
+            Details =
+                DetailsJson.ToStorage(request.Details),
+
             IsActive = true,
 
             CreatedAt = now,
@@ -102,7 +116,7 @@ public sealed class AgentRegisterEmployeeDocumentCommandHandler
 
         _context.Documents.Add(document);
 
-        // 3. Create audit log
+        // 4. Create audit log
         var auditLog = new AuditLog
         {
             Id = Guid.NewGuid(),
@@ -131,10 +145,10 @@ public sealed class AgentRegisterEmployeeDocumentCommandHandler
 
         _context.AuditLogs.Add(auditLog);
 
-        // 4. Save
+        // 5. Save
         await _context.SaveChangesAsync(cancellationToken);
 
-        // 5. Return response
+        // 6. Return response
         return new CreateEmployeeDocumentResponseDto(
             document.Id,
             document.EmployeeId!.Value,
@@ -147,6 +161,7 @@ public sealed class AgentRegisterEmployeeDocumentCommandHandler
             document.ContentType,
             document.FileSize,
             document.IsActive,
-            document.CreatedAt);
+            document.CreatedAt,
+            DetailsJson.FromStorage(document.Details));
     }
 }

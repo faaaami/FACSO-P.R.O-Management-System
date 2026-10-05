@@ -7,5 +7,6 @@ public sealed record AgentUpdateDocumentRequestDto(
     string? FileUrl,
     string? FileName,
     string? ContentType,
-    long? FileSize
+    long? FileSize,
+    object? Details
 );

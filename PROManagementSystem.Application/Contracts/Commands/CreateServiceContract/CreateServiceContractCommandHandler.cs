@@ -133,6 +133,28 @@ public sealed class CreateServiceContractCommandHandler
 
         _context.ServiceContracts.Add(contract);
 
+        if (activeContract is not null)
+        {
+            var endedAudit =
+                new Domain.Entities.AuditLog
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = _currentUser.UserId,
+                    Action = "ServiceContractEnded",
+                    EntityType = "ServiceContract",
+                    EntityId = activeContract.Id,
+                    Description =
+                        $"Service contract '{activeContract.ContractNumber}' was implicitly ended " +
+                        $"when contract '{contract.ContractNumber}' was created " +
+                        $"for company {contract.ClientCompanyId}.",
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                    IsDeleted = false,
+                    DeletedAt = null
+                };
+            _context.AuditLogs.Add(endedAudit);
+        }
+
         var auditLog = new Domain.Entities.AuditLog
         {
             Id = Guid.NewGuid(),

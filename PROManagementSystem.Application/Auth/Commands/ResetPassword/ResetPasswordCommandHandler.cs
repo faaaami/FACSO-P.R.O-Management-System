@@ -3,6 +3,7 @@ using System.Text;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Domain.Entities;
 
 namespace PROManagementSystem.Application.Auth.Commands.ResetPassword;
 
@@ -75,11 +76,28 @@ public sealed class ResetPasswordCommandHandler
         resetToken.User.RefreshToken = null;
         resetToken.User.RefreshTokenExpiry = null;
 
-        // 11. Save changes
+        // 11. Record the password reset
+        var auditLog = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = null,
+            Action = "PasswordReset",
+            EntityType = "User",
+            EntityId = resetToken.User.Id,
+            Description =
+                "User password was reset.",
+            CreatedAt = resetToken.User.UpdatedAt,
+            UpdatedAt = resetToken.User.UpdatedAt,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+        _context.AuditLogs.Add(auditLog);
+
+        // 12. Save changes
         await _context.SaveChangesAsync(
             cancellationToken);
 
-        // 12. Return response
+        // 13. Return response
         return new ResetPasswordResponseDto(
             "Password has been reset successfully.");
     }

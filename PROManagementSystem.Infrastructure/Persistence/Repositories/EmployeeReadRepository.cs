@@ -3,6 +3,7 @@ using Npgsql;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.Employees.Queries.GetEmployeeById;
 using PROManagementSystem.Application.Employees.Queries.GetEmployees;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -98,9 +99,8 @@ public sealed class EmployeeReadRepository
             INNER JOIN client_entities ce
                 ON ce.id = e.client_entity_id
             {whereClause}
-            ORDER BY e.created_at DESC
-            OFFSET @Offset
-            LIMIT @PageSize;
+            ORDER BY e.created_at DESC, e.id ASC
+            {SqlSnippets.Pagination};
             """;
 
         parameters.Add(
@@ -184,5 +184,81 @@ public sealed class EmployeeReadRepository
                     IncludeDeleted = includeDeleted
                 },
                 cancellationToken: cancellationToken));
+    }
+
+    public async Task<GetEmployeeByIdResponseDto?> GetByIdForCompanyAsync(
+        Guid clientCompanyId,
+        Guid employeeId,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT
+                e.id AS Id,
+                e.client_entity_id AS ClientEntityId,
+                ce.client_company_id AS ClientCompanyId,
+                ce.entity_name AS EntityName,
+                e.full_name AS FullName,
+                e.passport_number AS PassportNumber,
+                e.date_of_birth AS DateOfBirth,
+                e.nationality AS Nationality,
+                e.job_title AS JobTitle,
+                e.hire_date AS HireDate,
+                e.is_active AS IsActive,
+                e.is_deleted AS IsDeleted,
+                e.created_at AS CreatedAt,
+                e.updated_at AS UpdatedAt
+            FROM employees e
+            INNER JOIN client_entities ce
+                ON ce.id = e.client_entity_id
+            WHERE e.id = @EmployeeId
+              AND {SqlSnippets.ClientEmployeeScope}
+            LIMIT 1;
+            """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(
+                cancellationToken);
+
+        return await connection.QuerySingleOrDefaultAsync<
+            GetEmployeeByIdResponseDto>(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    ClientCompanyId = clientCompanyId,
+                    EmployeeId = employeeId
+                },
+                cancellationToken: cancellationToken));
+    }
+
+    public async Task<bool> IsEmployeeInCompanyAsync(
+        Guid clientCompanyId,
+        Guid employeeId,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT COUNT(*)
+            FROM employees e
+            INNER JOIN client_entities ce
+                ON ce.id = e.client_entity_id
+            WHERE e.id = @EmployeeId
+              AND {SqlSnippets.ClientEmployeeScope};
+            """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(
+                cancellationToken);
+
+        var count = await connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    ClientCompanyId = clientCompanyId,
+                    EmployeeId = employeeId
+                },
+                cancellationToken: cancellationToken));
+
+        return count > 0;
     }
 }

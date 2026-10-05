@@ -10,11 +10,14 @@ public sealed class ServiceFeeInvoiceCreationService
     : IServiceFeeInvoiceCreationService
 {
     private readonly IApplicationDbContext _context;
+    private readonly ICurrentUserService _currentUser;
 
     public ServiceFeeInvoiceCreationService(
-        IApplicationDbContext context)
+        IApplicationDbContext context,
+        ICurrentUserService currentUser)
     {
         _context = context;
+        _currentUser = currentUser;
     }
 
     public async Task<ServiceFeeInvoice> CreateAsync(
@@ -160,6 +163,25 @@ public sealed class ServiceFeeInvoiceCreationService
         };
 
         _context.ServiceFeeInvoices.Add(invoice);
+
+        // 8. Record creation (covers both the API and the
+        //    renewal task completed event driven paths)
+        var auditLog = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = _currentUser.UserId,
+            Action = "ServiceFeeInvoiceCreated",
+            EntityType = "ServiceFeeInvoice",
+            EntityId = invoice.Id,
+            Description =
+                $"Service fee invoice '{invoice.InvoiceNumber}' was created " +
+                $"for renewal task '{renewalTaskId}'.",
+            CreatedAt = now,
+            UpdatedAt = now,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+        _context.AuditLogs.Add(auditLog);
 
         await _context.SaveChangesAsync(
             cancellationToken);

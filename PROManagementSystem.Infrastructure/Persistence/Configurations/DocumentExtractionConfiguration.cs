@@ -31,6 +31,17 @@ public sealed class DocumentExtractionConfiguration
         builder.Property(x => x.SuggestedOwnerType)
             .HasMaxLength(50);
 
+        // Non-authoritative extraction/AI suggestions stored as a jsonb
+        // document. System.Text.Json is used at the application layer to
+        // (de)serialize the JSON object; EF stores the text verbatim. The
+        // constant empty-object default means legacy rows are safely readable
+        // ("{}") immediately after migration.
+        builder.Property(x => x.SuggestedDetails)
+            .HasColumnName("suggested_details")
+            .HasColumnType("jsonb")
+            .IsRequired()
+            .HasDefaultValueSql("'{}'::jsonb");
+
         builder.Property(x => x.Confidence)
             .HasPrecision(5, 4);
 
@@ -46,5 +57,10 @@ public sealed class DocumentExtractionConfiguration
 
         builder.Property(x => x.IsDeleted)
             .IsRequired();
+
+        builder.HasOne(x => x.CreatedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.CreatedBy)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

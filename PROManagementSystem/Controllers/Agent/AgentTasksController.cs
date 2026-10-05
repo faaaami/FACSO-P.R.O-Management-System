@@ -21,7 +21,7 @@ namespace PROManagementSystem.Api.Controllers.Agent;
 
 [ApiController]
 [Route("api/v1/agent/tasks")]
-[Authorize]
+[Authorize(Roles = "Agent")]
 public sealed class AgentTasksController : ControllerBase
 {
     private readonly ISender _sender;
@@ -42,9 +42,11 @@ public sealed class AgentTasksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetTasks(
         [FromQuery] RenewalTaskStatus? status,
-        CancellationToken cancellationToken)
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
     {
-        var query = new GetAgentTasksQuery(status);
+        var query = new GetAgentTasksQuery(status, page, pageSize);
 
         var result =
             await _sender.Send(query, cancellationToken);
@@ -108,9 +110,10 @@ public sealed class AgentTasksController : ControllerBase
     {
         var command =
             new UpdateRenewalTaskStatusCommand(
-                taskId,
-                request.Status,
-                request.Note);
+                  taskId,
+                  request.Status,
+                  request.Note,
+                  request.RenewedExpiryDate);
 
         var result =
             await _sender.Send(command, cancellationToken);

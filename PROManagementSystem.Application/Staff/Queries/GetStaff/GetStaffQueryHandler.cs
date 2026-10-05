@@ -39,10 +39,13 @@ public sealed class GetStaffQueryHandler
             await query.CountAsync(
                 cancellationToken);
 
+        var offset = (request.Page - 1) * request.PageSize;
+
         var items =
             await query
                 .OrderByDescending(
                     x => x.CreatedAt)
+                .ThenBy(x => x.Id)
                 .Select(x =>
                     new StaffListItemDto(
                         x.Id,
@@ -54,6 +57,8 @@ public sealed class GetStaffQueryHandler
                         x.IsApproved,
                         x.EmailVerified,
                         x.CreatedAt))
+                .Skip(offset)
+                .Take(request.PageSize)
                 .ToListAsync(
                     cancellationToken);
 

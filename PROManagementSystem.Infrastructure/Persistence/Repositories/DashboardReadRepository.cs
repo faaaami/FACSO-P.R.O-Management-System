@@ -1,6 +1,7 @@
 using Dapper;
 using Npgsql;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -21,49 +22,20 @@ public sealed class DashboardReadRepository
         await using var connection =
             await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        var sql = """
+        var sql = $"""
             SELECT
                 (SELECT COUNT(*)::int FROM client_companies WHERE is_deleted = false) AS "TotalClients",
                 (SELECT COUNT(*)::int FROM client_entities WHERE is_deleted = false) AS "TotalEntities",
                 (SELECT COUNT(*)::int FROM employees WHERE is_deleted = false) AS "TotalEmployees",
-                (SELECT COUNT(*)::int FROM renewal_tasks WHERE "IsDeleted" = false AND "Status" IN (1,2,3,5)) AS "ActiveRenewalTasks",
-                (SELECT COUNT(*)::int FROM retainer_invoices WHERE "IsDeleted" = false AND "Status" = 0) AS "PendingRetainerInvoices",
-                (SELECT COUNT(*)::int FROM service_fee_invoices WHERE "IsDeleted" = false AND "Status" = 0) AS "PendingServiceFeeInvoices";
+                (SELECT COUNT(*)::int FROM renewal_tasks WHERE {SqlColumnNames.RenewalTaskIsDeleted} = false AND {SqlColumnNames.RenewalTaskStatus} IN (1,2,3,5)) AS "ActiveRenewalTasks",
+                -- 1 = Pending. RetainerInvoiceStatus and ServiceFeeInvoiceStatus both
+                -- start at 1 (Pending=1, Paid=2, Void=3); 0 is not a member of either.
+                (SELECT COUNT(*)::int FROM retainer_invoices WHERE {SqlColumnNames.RetainerInvoiceIsDeleted} = false AND {SqlColumnNames.RetainerInvoiceStatus} = 1) AS "PendingRetainerInvoices",
+                (SELECT COUNT(*)::int FROM service_fee_invoices WHERE {SqlColumnNames.ServiceFeeInvoiceIsDeleted} = false AND {SqlColumnNames.ServiceFeeInvoiceStatus} = 1) AS "PendingServiceFeeInvoices";
             """;
 
         return await connection.QuerySingleAsync<DashboardSummaryDto>(
             new CommandDefinition(sql, cancellationToken: cancellationToken));
-    }
-
-    public async Task<DashboardStaffWorkloadDto> GetStaffWorkloadAsync(
-        CancellationToken cancellationToken)
-    {
-        await using var connection =
-            await _dataSource.OpenConnectionAsync(cancellationToken);
-
-        var sql = """
-            SELECT "StaffId", "StaffName", "PendingTasks", "InProgressTasks", "BlockedTasks"
-            FROM (
-                SELECT
-                    u.id AS "StaffId",
-                    u.full_name AS "StaffName",
-                    COUNT(CASE WHEN rt."Status" IN (1,2,3) THEN 1 END)::int AS "PendingTasks",
-                    COUNT(CASE WHEN rt."Status" = 5 THEN 1 END)::int AS "InProgressTasks",
-                    COUNT(CASE WHEN rt."Status" = 6 THEN 1 END)::int AS "BlockedTasks"
-                FROM users u
-                INNER JOIN renewal_tasks rt
-                    ON rt."AssignedStaffId" = u.id AND rt."IsDeleted" = false
-                WHERE u.is_deleted = false AND u.role = 'Agent'
-                GROUP BY u.id, u.full_name
-            ) sub
-            ORDER BY ("PendingTasks" + "InProgressTasks" + "BlockedTasks") DESC;
-            """;
-
-        var items = (await connection.QueryAsync<DashboardStaffWorkloadItemDto>(
-            new CommandDefinition(sql, cancellationToken: cancellationToken)))
-            .ToList();
-
-        return new DashboardStaffWorkloadDto(items);
     }
 
     public async Task<DashboardActivityFeedResponseDto> GetActivityFeedAsync(
@@ -89,7 +61,7 @@ public sealed class DashboardReadRepository
             LEFT JOIN users u ON u.id = al.user_id
             WHERE al.is_deleted = false
             ORDER BY al.created_at DESC
-            OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+            {SqlSnippets.Pagination};
             """;
 
         var items = (await connection.QueryAsync<DashboardActivityFeedItemDto>(
@@ -111,18 +83,18 @@ public sealed class DashboardReadRepository
             ? DateTime.UtcNow.AddDays(-7)
             : DateTime.UtcNow.AddMonths(-1);
 
-        var sql = """
+        var sql = $"""
             SELECT
                 COALESCE(SUM("Amount"), 0) AS "TotalRevenue",
                 COALESCE(SUM(CASE WHEN src = 'retainer' THEN "Amount" ELSE 0 END), 0) AS "RetainerRevenue",
                 COALESCE(SUM(CASE WHEN src = 'servicefee' THEN "Amount" ELSE 0 END), 0) AS "ServiceFeeRevenue",
                 COUNT(*)::int AS "InvoiceCount"
             FROM (
-                SELECT "Amount", 'retainer' AS src FROM retainer_invoices
-                WHERE "IsDeleted" = false AND "Status" = 2 AND "PaidAt" >= @PeriodStart
+                SELECT {SqlColumnNames.RetainerInvoiceAmount}, 'retainer' AS src FROM retainer_invoices
+                WHERE {SqlColumnNames.RetainerInvoiceIsDeleted} = false AND {SqlColumnNames.RetainerInvoiceStatus} = 2 AND {SqlColumnNames.RetainerInvoicePaidAt} >= @PeriodStart
                 UNION ALL
-                SELECT "Amount", 'servicefee' AS src FROM service_fee_invoices
-                WHERE "IsDeleted" = false AND "Status" = 2 AND "PaidAt" >= @PeriodStart
+                SELECT {SqlColumnNames.ServiceFeeInvoiceAmount}, 'servicefee' AS src FROM service_fee_invoices
+                WHERE {SqlColumnNames.ServiceFeeInvoiceIsDeleted} = false AND {SqlColumnNames.ServiceFeeInvoiceStatus} = 2 AND {SqlColumnNames.ServiceFeeInvoicePaidAt} >= @PeriodStart
             ) combined;
             """;
 
@@ -142,14 +114,14 @@ public sealed class DashboardReadRepository
             SELECT
                 d.id AS "Id", d.document_number AS "DocumentNumber",
                 d.file_name AS "FileName", d.expiry_date AS "ExpiryDate",
-                EXTRACT(DAY FROM d.expiry_date - NOW())::int AS "DaysUntilExpiry",
+                EXTRACT(DAY FROM d.expiry_date - CURRENT_TIMESTAMP)::int AS "DaysUntilExpiry",
                 ce.entity_name AS "EntityName", NULL::text AS "EmployeeName"
             FROM documents d
             LEFT JOIN client_entities ce ON ce.id = d.client_entity_id
             WHERE d.is_deleted = false AND d.is_active = true
               AND d.expiry_date IS NOT NULL
-              AND d.expiry_date >= NOW()
-              AND d.expiry_date <= NOW() + (@Days || ' days')::interval
+              AND d.expiry_date >= CURRENT_TIMESTAMP
+              AND d.expiry_date <= CURRENT_TIMESTAMP + (@Days * INTERVAL '1 day')
             ORDER BY d.expiry_date ASC LIMIT 20;
             """;
 
@@ -169,14 +141,14 @@ public sealed class DashboardReadRepository
             SELECT
                 d.id AS "Id", d.document_number AS "DocumentNumber",
                 d.file_name AS "FileName", d.expiry_date AS "ExpiryDate",
-                EXTRACT(DAY FROM d.expiry_date - NOW())::int AS "DaysUntilExpiry",
+                EXTRACT(DAY FROM d.expiry_date - CURRENT_TIMESTAMP)::int AS "DaysUntilExpiry",
                 NULL::text AS "EntityName", e.full_name AS "EmployeeName"
             FROM documents d
             INNER JOIN employees e ON e.id = d.employee_id
             WHERE d.is_deleted = false AND d.is_active = true
               AND d.expiry_date IS NOT NULL
-              AND d.expiry_date >= NOW()
-              AND d.expiry_date <= NOW() + (@Days || ' days')::interval
+              AND d.expiry_date >= CURRENT_TIMESTAMP
+              AND d.expiry_date <= CURRENT_TIMESTAMP + (@Days * INTERVAL '1 day')
             ORDER BY d.expiry_date ASC LIMIT 20;
             """;
 

@@ -27,6 +27,7 @@ public sealed class GetRetainerInvoicePdfQueryHandler
         var invoice =
             await _readRepository.GetByIdAsync(
                 request.Id,
+                request.ClientCompanyId,
                 cancellationToken);
 
         if (invoice is null)

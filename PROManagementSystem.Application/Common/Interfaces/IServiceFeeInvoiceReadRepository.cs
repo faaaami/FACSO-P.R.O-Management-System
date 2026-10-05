@@ -16,5 +16,6 @@ public interface IServiceFeeInvoiceReadRepository
 
     Task<GetServiceFeeInvoiceByIdResponseDto?> GetByIdAsync(
         Guid id,
+        Guid? clientCompanyId,
         CancellationToken cancellationToken);
 }

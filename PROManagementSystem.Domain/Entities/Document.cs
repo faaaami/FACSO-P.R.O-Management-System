@@ -29,6 +29,13 @@ public class Document : BaseEntity
 
     public long? FileSize { get; set; }
 
+    // Authoritative, human-confirmed type-specific details (Task 7B.2).
+    // A JSON object serialized with System.Text.Json (keys follow the schema
+    // registry's DocumentFieldDefinition.Key contract). "No details" is the
+    // empty object "{}"; this string is never null. OCR text must never be
+    // stored here.
+    public string Details { get; set; } = "{}";
+
     public bool IsActive { get; set; } = true;
 
     public ClientEntity? ClientEntity { get; set; }

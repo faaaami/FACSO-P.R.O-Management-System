@@ -1,3 +1,5 @@
+using PROManagementSystem.Domain.Enums;
+
 namespace PROManagementSystem.Application.GovFeeDisbursements.Queries.GetGovFeeDisbursementById;
 
 public sealed record GetGovFeeDisbursementByIdResponseDto(
@@ -9,7 +11,7 @@ public sealed record GetGovFeeDisbursementByIdResponseDto(
     string? GovernmentReference,
     decimal Amount,
     string Currency,
-    int Status,
+    GovFeeDisbursementStatus Status,
     DateTime PaidByFirmAt,
     DateTime? InvoicedAt,
     DateTime? ReimbursedAt,

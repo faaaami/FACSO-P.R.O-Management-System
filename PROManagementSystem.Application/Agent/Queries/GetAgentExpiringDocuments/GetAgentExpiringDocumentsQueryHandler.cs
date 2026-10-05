@@ -9,8 +9,6 @@ public sealed class GetAgentExpiringDocumentsQueryHandler
         GetAgentExpiringDocumentsQuery,
         GetExpiringDocumentsResponseDto>
 {
-    private static readonly int[] s_allowedDays = { 30, 60, 90 };
-
     private readonly IRenewalTaskReadRepository _repository;
     private readonly ICurrentUserService _currentUser;
 
@@ -26,12 +24,17 @@ public sealed class GetAgentExpiringDocumentsQueryHandler
         GetAgentExpiringDocumentsQuery request,
         CancellationToken cancellationToken)
     {
-        if (!s_allowedDays.Contains(request.Days))
-        {
-            throw new ArgumentException(
-                "Days must be one of: 30, 60, 90.");
-        }
-
+        // Days is validated by GetAgentExpiringDocumentsQueryValidator, which
+        // is the single authority for the 1..365 range. The pipeline behaviour
+        // runs that validator before this handler, so a Days value reaching
+        // here has already been accepted. This handler previously also
+        // re-checked Days against a hard-coded { 30, 60, 90 } whitelist, which
+        // contradicted the validator: any value the validator permitted outside
+        // those three constants was rejected further down with a 400 whose
+        // message disagreed with the validator's own. The repository window is
+        // parameterised (@Days * INTERVAL '1 day'), so arbitrary widths are
+        // supported. The Agent UI still offers only 30/60/90; that is a product
+        // choice about which windows to surface, not an API restriction.
         if (request.Page < 1)
         {
             throw new ArgumentException(

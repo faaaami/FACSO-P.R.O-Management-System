@@ -54,6 +54,16 @@ public sealed class DocumentConfiguration
         builder.Property(x => x.FileSize)
             .HasColumnName("file_size");
 
+        // Type-specific details stored as a jsonb document. System.Text.Json is
+        // used at the application layer to (de)serialize the JSON object; EF
+        // stores the text verbatim. The constant empty-object default means
+        // legacy rows are safely readable ("{}") immediately after migration.
+        builder.Property(x => x.Details)
+            .HasColumnName("details")
+            .HasColumnType("jsonb")
+            .IsRequired()
+            .HasDefaultValueSql("'{}'::jsonb");
+
         builder.Property(x => x.IsActive)
             .HasColumnName("is_active")
             .HasDefaultValue(true);

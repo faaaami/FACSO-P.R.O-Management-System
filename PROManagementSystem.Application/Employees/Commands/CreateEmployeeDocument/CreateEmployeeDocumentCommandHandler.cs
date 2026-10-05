@@ -1,5 +1,6 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Domain.Entities;
 
@@ -46,7 +47,17 @@ public sealed class CreateEmployeeDocumentCommandHandler
                 "Cannot add a document to a deleted employee.");
         }
 
-        // 3. Create document
+        // 3. Reject when the same owner already holds an active document
+        //    with this type and document number.
+        await DocumentDuplicateGuard.EnsureNotDuplicateAsync(
+            _context,
+            employee.Id,
+            null,
+            request.Type,
+            request.DocumentNumber,
+            cancellationToken);
+
+        // 4. Create document
         var now = DateTime.UtcNow;
 
         var document = new Document
@@ -74,6 +85,9 @@ public sealed class CreateEmployeeDocumentCommandHandler
 
             FileSize = request.FileSize,
 
+            Details =
+                DetailsJson.ToStorage(request.Details),
+
             IsActive = true,
 
             CreatedAt = now,
@@ -87,7 +101,7 @@ public sealed class CreateEmployeeDocumentCommandHandler
 
         _context.Documents.Add(document);
 
-        // 4. Create audit log
+        // 5. Create audit log
         var auditLog = new AuditLog
         {
             Id = Guid.NewGuid(),
@@ -116,11 +130,11 @@ public sealed class CreateEmployeeDocumentCommandHandler
 
         _context.AuditLogs.Add(auditLog);
 
-        // 5. Save document + audit log together
+        // 6. Save document + audit log together
         await _context.SaveChangesAsync(
             cancellationToken);
 
-        // 6. Return response
+        // 7. Return response
         return new CreateEmployeeDocumentResponseDto(
             document.Id,
             document.EmployeeId!.Value,
@@ -133,6 +147,7 @@ public sealed class CreateEmployeeDocumentCommandHandler
             document.ContentType,
             document.FileSize,
             document.IsActive,
-            document.CreatedAt);
+            document.CreatedAt,
+            DetailsJson.FromStorage(document.Details));
     }
 }

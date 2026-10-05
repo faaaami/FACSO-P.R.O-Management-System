@@ -14,7 +14,7 @@ namespace PROManagementSystem.Api.Controllers.ServiceFeeInvoices;
 
 [ApiController]
 [Route("api/v1")]
-[Authorize]
+[Authorize(Roles = "Admin")]
 public sealed class ServiceFeeInvoicesController
     : ControllerBase
 {

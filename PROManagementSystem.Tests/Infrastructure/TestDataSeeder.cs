@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Domain.Entities;
 using PROManagementSystem.Domain.Enums;
+using PROManagementSystem.Infrastructure.Identity;
 using PROManagementSystem.Infrastructure.Persistence;
+using PROManagementSystem.Infrastructure.Persistence.Seeders;
 
 namespace PROManagementSystem.Tests.Infrastructure;
 
@@ -21,6 +23,10 @@ public static class TestDataSeeder
         public static readonly Guid ClientUserA = Guid("000000000004");
         public static readonly Guid ClientUserB = Guid("000000000005");
 
+        public static readonly Guid InactiveUser = Guid("000000000006");
+        public static readonly Guid NotApprovedUser = Guid("000000000007");
+        public static readonly Guid NotVerifiedUser = Guid("000000000008");
+
         public static readonly Guid CompanyA = Guid("0000000101");
         public static readonly Guid CompanyB = Guid("0000000102");
 
@@ -35,9 +41,27 @@ public static class TestDataSeeder
 
         public static readonly Guid TaskA = Guid("0000000501");
         public static readonly Guid TaskB = Guid("0000000502");
+        public static readonly Guid TaskC = Guid("0000000503");
+        public static readonly Guid TaskD = Guid("0000000504");
 
         public static readonly Guid NotificationA = Guid("0000000601");
         public static readonly Guid NotificationB = Guid("0000000602");
+
+        public static readonly Guid ServiceRequestA = Guid("0000000801");
+        public static readonly Guid ServiceRequestB = Guid("0000000802");
+
+        public static readonly Guid ContractA = Guid("0000000701");
+        public static readonly Guid ContractB = Guid("0000000702");
+
+        public static readonly Guid RetainerInvoiceA = Guid("0000000c01");
+        public static readonly Guid RetainerInvoiceB = Guid("0000000c02");
+
+        public static readonly Guid ServiceFeeInvoiceA = Guid("0000000d01");
+        public static readonly Guid ServiceFeeInvoiceB = Guid("0000000d02");
+
+        public static readonly Guid GovFeeDisbursementA = Guid("0000000e01");
+        public static readonly Guid GovFeeDisbursementB = Guid("0000000e02");
+        public static readonly Guid GovFeeDisbursementC = Guid("0000000e03");
 
         public static readonly Guid Unknown = Guid("0000000999");
 
@@ -45,6 +69,16 @@ public static class TestDataSeeder
             => System.Guid.Parse(
                 $"00000000-0000-0000-0000-{hex.PadLeft(12, '0')}");
     }
+
+    /// <summary>Deterministic password used by login integration tests.</summary>
+    public const string TestLoginPassword = "TestPassword123!";
+
+    /// <summary>
+    /// BCrypt hash of <see cref="TestLoginPassword"/>, generated once by the
+    /// production hasher and reused across every seed run.
+    /// </summary>
+    private static readonly string TestLoginPasswordHash =
+        new BCryptPasswordHasher().Hash(TestLoginPassword);
 
     public static void Seed(ApplicationDbContext db)
     {
@@ -57,7 +91,13 @@ public static class TestDataSeeder
             User(Ids.ClientUserA, "Client A", "client-a@test.local", UserRole.Client,
                 clientCompanyId: Ids.CompanyA),
             User(Ids.ClientUserB, "Client B", "client-b@test.local", UserRole.Client,
-                clientCompanyId: Ids.CompanyB));
+                clientCompanyId: Ids.CompanyB),
+            User(Ids.InactiveUser, "Inactive User", "inactive@test.local",
+                UserRole.Agent, isActive: false),
+            User(Ids.NotApprovedUser, "Pending User", "pending@test.local",
+                UserRole.Agent, isApproved: false),
+            User(Ids.NotVerifiedUser, "Unverified User", "unverified@test.local",
+                UserRole.Agent, emailVerified: false));
 
         db.ClientCompanies.AddRange(
             Company(Ids.CompanyA, "Company A"),
@@ -66,6 +106,10 @@ public static class TestDataSeeder
         db.ClientEntities.AddRange(
             Entity(Ids.EntityA, Ids.CompanyA, "Entity A"),
             Entity(Ids.EntityB, Ids.CompanyB, "Entity B"));
+
+        db.ServiceContracts.AddRange(
+            Contract(Ids.ContractA, Ids.CompanyA, "CT-A-001"),
+            Contract(Ids.ContractB, Ids.CompanyB, "CT-B-001"));
 
         db.Employees.AddRange(
             Employee(Ids.EmployeeA, Ids.EntityA, "Employee A"),
@@ -84,7 +128,27 @@ public static class TestDataSeeder
 
         db.RenewalTasks.AddRange(
             TaskA(now),
-            TaskB(now));
+            TaskB(now),
+            TaskC(now),
+            TaskD(now));
+
+        db.ServiceRequests.AddRange(
+            ServiceRequest(
+                Ids.ServiceRequestA,
+                Ids.CompanyA,
+                ServiceRequestType.EarlyRenewal,
+                Ids.EmployeeA,
+                Ids.EntityA,
+                Ids.DocumentA,
+                "Early renewal service request for Company A."),
+            ServiceRequest(
+                Ids.ServiceRequestB,
+                Ids.CompanyB,
+                ServiceRequestType.Other,
+                Ids.EmployeeB,
+                Ids.EntityB,
+                Ids.DocumentB,
+                "Other service request for Company B."));
 
         db.Notifications.AddRange(
             new Notification
@@ -114,7 +178,39 @@ public static class TestDataSeeder
                 DeletedAt = null
             });
 
+        db.RetainerInvoices.AddRange(
+            RetainerInvoice(Ids.RetainerInvoiceA, Ids.CompanyA,
+                Ids.ContractA, "INV-R-A-001",
+                RetainerInvoiceStatus.Pending),
+            RetainerInvoice(Ids.RetainerInvoiceB, Ids.CompanyB,
+                Ids.ContractB, "INV-R-B-001",
+                RetainerInvoiceStatus.Paid));
+
+        db.ServiceFeeInvoices.AddRange(
+            ServiceFeeInvoice(Ids.ServiceFeeInvoiceA, Ids.CompanyA,
+                Ids.TaskC, "INV-SF-A-001",
+                ServiceFeeInvoiceStatus.Pending),
+            ServiceFeeInvoice(Ids.ServiceFeeInvoiceB, Ids.CompanyB,
+                Ids.TaskD, "INV-SF-B-001",
+                ServiceFeeInvoiceStatus.Void));
+
+        db.GovFeeDisbursements.AddRange(
+            GovFeeDisbursement(Ids.GovFeeDisbursementA, Ids.CompanyA,
+                Ids.TaskA, "GOV-A-001",
+                GovFeeDisbursementStatus.PaidByFirm),
+            GovFeeDisbursement(Ids.GovFeeDisbursementB, Ids.CompanyB,
+                Ids.TaskB, "GOV-B-001",
+                GovFeeDisbursementStatus.InvoicedToClient),
+            GovFeeDisbursement(Ids.GovFeeDisbursementC, Ids.CompanyA,
+                Ids.TaskA, "GOV-A-002",
+                GovFeeDisbursementStatus.Reimbursed));
+
         db.SaveChanges();
+
+        // Append the realistic mock client company used for manual end-to-end
+        // testing. Idempotent; runs after the A/B worlds are persisted so the
+        // deterministic agent (Ids.AgentA) already exists for task assignment.
+        MockClientCompanySeeder.Seed(db);
     }
 
     private static User User(
@@ -122,17 +218,20 @@ public static class TestDataSeeder
         string fullName,
         string email,
         UserRole role,
-        Guid? clientCompanyId = null)
+        Guid? clientCompanyId = null,
+        bool isActive = true,
+        bool isApproved = true,
+        bool emailVerified = true)
         => new()
         {
             Id = id,
             FullName = fullName,
             Email = email,
-            PasswordHash = "seed-only-no-password",
+            PasswordHash = TestLoginPasswordHash,
             Role = role,
-            IsActive = true,
-            IsApproved = true,
-            EmailVerified = true,
+            IsActive = isActive,
+            IsApproved = isApproved,
+            EmailVerified = emailVerified,
             ClientCompanyId = clientCompanyId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -159,6 +258,23 @@ public static class TestDataSeeder
             ClientCompanyId = companyId,
             EntityName = name,
             IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+
+    private static ServiceContract Contract(
+        Guid id, Guid companyId, string contractNumber)
+        => new()
+        {
+            Id = id,
+            ClientCompanyId = companyId,
+            ContractNumber = contractNumber,
+            StartDate = DateTime.UtcNow.AddDays(-30),
+            EndDate = DateTime.UtcNow.AddYears(1),
+            Status = ServiceContractStatus.Active,
+            RetainerAmount = 1000m,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             IsDeleted = false,
@@ -212,6 +328,14 @@ public static class TestDataSeeder
         => RenewalTask(Ids.TaskB, Ids.DocumentB, Ids.CompanyB, Ids.AgentB,
             "TK-B-001", RenewalTaskStatus.Submitted);
 
+    private static RenewalTask TaskC(DateTime now)
+        => RenewalTask(Ids.TaskC, Ids.DocumentA, Ids.CompanyA, Ids.AgentA,
+            "TK-C-001", RenewalTaskStatus.Updated);
+
+    private static RenewalTask TaskD(DateTime now)
+        => RenewalTask(Ids.TaskD, Ids.DocumentB, Ids.CompanyB, Ids.AgentB,
+            "TK-D-001", RenewalTaskStatus.Updated);
+
     private static RenewalTask RenewalTask(
         Guid id,
         Guid documentId,
@@ -227,6 +351,124 @@ public static class TestDataSeeder
             AssignedStaffId = agentId,
             Status = status,
             ServiceFeeAmount = 150m,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+
+    private static ServiceRequest ServiceRequest(
+        Guid id,
+        Guid companyId,
+        ServiceRequestType type,
+        Guid? employeeId,
+        Guid? entityId,
+        Guid? documentId,
+        string description)
+        => new()
+        {
+            Id = id,
+            ClientCompanyId = companyId,
+            Type = type,
+            EmployeeId = employeeId,
+            EntityId = entityId,
+            DocumentId = documentId,
+            Status = ServiceRequestStatus.Submitted,
+            Description = description,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+
+    private static RetainerInvoice RetainerInvoice(
+        Guid id,
+        Guid companyId,
+        Guid contractId,
+        string invoiceNumber,
+        RetainerInvoiceStatus status)
+        => new()
+        {
+            Id = id,
+            ClientCompanyId = companyId,
+            ServiceContractId = contractId,
+            InvoiceNumber = invoiceNumber,
+            InvoiceDate = DateTime.UtcNow.AddDays(-20),
+            DueDate = DateTime.UtcNow.AddDays(10),
+            PeriodStart = DateTime.UtcNow.AddDays(-30),
+            PeriodEnd = DateTime.UtcNow.AddDays(1),
+            Amount = 2500m,
+            Currency = "AED",
+            Status = status,
+            Notes = "Seeded retainer invoice.",
+            PaidAt = status == RetainerInvoiceStatus.Paid
+                ? DateTime.UtcNow.AddDays(-5)
+                : null,
+            VoidedAt = null,
+            VoidReason = null,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+
+    private static ServiceFeeInvoice ServiceFeeInvoice(
+        Guid id,
+        Guid companyId,
+        Guid renewalTaskId,
+        string invoiceNumber,
+        ServiceFeeInvoiceStatus status)
+        => new()
+        {
+            Id = id,
+            ClientCompanyId = companyId,
+            RenewalTaskId = renewalTaskId,
+            InvoiceNumber = invoiceNumber,
+            InvoiceDate = DateTime.UtcNow.AddDays(-10),
+            DueDate = DateTime.UtcNow.AddDays(5),
+            Amount = 150m,
+            Currency = "AED",
+            Status = status,
+            Description = "Seeded service fee invoice.",
+            PaidAt = null,
+            VoidedAt = status == ServiceFeeInvoiceStatus.Void
+                ? DateTime.UtcNow.AddDays(-2)
+                : null,
+            VoidReason = status == ServiceFeeInvoiceStatus.Void
+                ? "Seeded as void"
+                : null,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+
+    private static GovFeeDisbursement GovFeeDisbursement(
+        Guid id,
+        Guid companyId,
+        Guid renewalTaskId,
+        string governmentReference,
+        GovFeeDisbursementStatus status)
+        => new()
+        {
+            Id = id,
+            ClientCompanyId = companyId,
+            RenewalTaskId = renewalTaskId,
+            FeeDescription = "Government fee",
+            GovernmentReference = governmentReference,
+            Amount = status == GovFeeDisbursementStatus.PaidByFirm
+                ? 5000m
+                : 750m,
+            Currency = "AED",
+            Status = status,
+            PaidByFirmAt = DateTime.UtcNow.AddDays(-8),
+            InvoicedAt = status >= GovFeeDisbursementStatus.InvoicedToClient
+                ? DateTime.UtcNow.AddDays(-6)
+                : null,
+            ReimbursedAt = status == GovFeeDisbursementStatus.Reimbursed
+                ? DateTime.UtcNow.AddDays(-1)
+                : null,
+            Notes = null,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             IsDeleted = false,

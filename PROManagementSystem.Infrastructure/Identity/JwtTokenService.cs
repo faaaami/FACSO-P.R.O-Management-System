@@ -93,13 +93,43 @@ public sealed class JwtTokenService : ITokenService
         return Convert.ToBase64String(randomBytes);
     }
 
+    public string HashRefreshToken(string refreshToken)
+    {
+        var digest = SHA256.HashData(
+            Encoding.UTF8.GetBytes(refreshToken));
+
+        return Convert.ToBase64String(digest);
+    }
+
     public bool ValidateRefreshToken(
         User user,
         string refreshToken)
     {
-        return !string.IsNullOrWhiteSpace(user.RefreshToken)
-            && user.RefreshToken == refreshToken
-            && user.RefreshTokenExpiry.HasValue
-            && user.RefreshTokenExpiry.Value > DateTime.UtcNow;
+        if (string.IsNullOrWhiteSpace(refreshToken) ||
+            string.IsNullOrWhiteSpace(user.RefreshToken) ||
+            !user.RefreshTokenExpiry.HasValue ||
+            user.RefreshTokenExpiry.Value <= DateTime.UtcNow)
+        {
+            return false;
+        }
+
+        var presentedDigest = SHA256.HashData(
+            Encoding.UTF8.GetBytes(refreshToken));
+
+        byte[] storedDigest;
+
+        try
+        {
+            storedDigest = Convert.FromBase64String(user.RefreshToken);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        return presentedDigest.Length == storedDigest.Length
+            && CryptographicOperations.FixedTimeEquals(
+                presentedDigest,
+                storedDigest);
     }
 }

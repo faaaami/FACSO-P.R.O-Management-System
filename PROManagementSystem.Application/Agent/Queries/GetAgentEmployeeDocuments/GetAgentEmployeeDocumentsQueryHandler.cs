@@ -26,6 +26,20 @@ public sealed class GetAgentEmployeeDocumentsQueryHandler
     {
         var agentId = _currentUser.UserId!.Value;
 
+        // Strict task-linked scope check on the parent employee.
+        // Out-of-scope or nonexistent parent -> 404, never an empty list.
+        var employeeInScope =
+            await _repository.IsAgentEmployeeInScopeAsync(
+                agentId,
+                request.EmployeeId,
+                cancellationToken);
+
+        if (!employeeInScope)
+        {
+            throw new KeyNotFoundException(
+                "Employee was not found.");
+        }
+
         return await _repository.GetAgentEmployeeDocumentsAsync(
             agentId,
             request.EmployeeId,

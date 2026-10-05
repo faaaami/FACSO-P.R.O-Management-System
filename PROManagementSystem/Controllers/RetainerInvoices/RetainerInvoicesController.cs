@@ -14,7 +14,7 @@ namespace PROManagementSystem.Api.Controllers.RetainerInvoices;
 
 [ApiController]
 [Route("api/v1")]
-[Authorize]
+[Authorize(Roles = "Admin")]
 public sealed class RetainerInvoicesController
     : ControllerBase
 {

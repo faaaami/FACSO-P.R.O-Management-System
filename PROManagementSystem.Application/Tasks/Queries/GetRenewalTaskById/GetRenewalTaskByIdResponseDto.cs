@@ -12,6 +12,7 @@ public sealed record GetRenewalTaskByIdResponseDto(
     string? BlockedReason,
     DateTime? BlockedSince,
     DateTime? CompletedAt,
+    decimal? ServiceFeeAmount,
     int StepLogCount,
     DateTime CreatedAt,
     DateTime UpdatedAt

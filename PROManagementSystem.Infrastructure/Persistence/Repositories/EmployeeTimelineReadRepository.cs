@@ -2,6 +2,7 @@
 using Npgsql;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.Employees.Queries.GetEmployeeTimeline;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -31,7 +32,7 @@ public sealed class EmployeeTimelineReadRepository
               AND is_deleted = false;
             """;
 
-        const string dataSql = """
+        string dataSql = $"""
             SELECT
                 id AS Id,
                 action AS Action,
@@ -43,8 +44,7 @@ public sealed class EmployeeTimelineReadRepository
             WHERE employee_id = @EmployeeId
               AND is_deleted = false
             ORDER BY created_at DESC
-            OFFSET @Offset
-            LIMIT @PageSize;
+            {SqlSnippets.Pagination};
             """;
 
         await using var connection =

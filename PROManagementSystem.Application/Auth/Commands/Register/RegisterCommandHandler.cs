@@ -33,10 +33,13 @@ public sealed class RegisterCommandHandler
         RegisterCommand request,
         CancellationToken cancellationToken)
     {
-        // 1. Check whether the email already exists
+        // 1. Normalize email once, then use it everywhere
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+
+        // 2. Check whether the email already exists (case-insensitive)
         var emailExists = await _context.Users
             .AnyAsync(
-                x => x.Email == request.Email,
+                x => x.Email == normalizedEmail,
                 cancellationToken);
 
         if (emailExists)
@@ -79,7 +82,7 @@ public sealed class RegisterCommandHandler
 
             FullName = request.FullName.Trim(),
 
-            Email = request.Email.Trim().ToLowerInvariant(),
+            Email = normalizedEmail,
 
             PasswordHash = passwordHash,
 
@@ -131,17 +134,34 @@ public sealed class RegisterCommandHandler
         _context.EmailVerificationTokens.Add(
             verificationTokenEntity);
 
-        // 8. Save User + verification token
+        // 8. Record the registration
+        var auditLog = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = _currentUser.UserId,
+            Action = "UserRegistered",
+            EntityType = "User",
+            EntityId = user.Id,
+            Description =
+                $"User account '{user.Email}' was registered.",
+            CreatedAt = user.CreatedAt,
+            UpdatedAt = user.CreatedAt,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+        _context.AuditLogs.Add(auditLog);
+
+        // 9. Save User + verification token + audit
         await _context.SaveChangesAsync(
             cancellationToken);
 
-        // 9. Send verification email
+        // 10. Send verification email
         await _emailService.SendEmailVerificationAsync(
             user.Email,
             verificationToken,
             cancellationToken);
 
-        // 10. Return response DTO
+        // 11. Return response DTO
         return new RegisterResponseDto(
             user.Id,
             user.FullName,

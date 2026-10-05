@@ -2,8 +2,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentValidation;
+using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Api.Common;
 using PROManagementSystem.Application.Common.Exceptions;
+using PROManagementSystem.Application.Common.Interfaces;
 
 namespace PROManagementSystem.Api.Common.Middlewares;
 
@@ -17,13 +19,16 @@ public sealed class GlobalExceptionMiddleware
 
     private readonly RequestDelegate _next;
     private readonly ILogger<GlobalExceptionMiddleware> _logger;
+    private readonly IDuplicateDocumentTranslator _duplicateTranslator;
 
     public GlobalExceptionMiddleware(
         RequestDelegate next,
-        ILogger<GlobalExceptionMiddleware> logger)
+        ILogger<GlobalExceptionMiddleware> logger,
+        IDuplicateDocumentTranslator duplicateTranslator)
     {
         _next = next;
         _logger = logger;
+        _duplicateTranslator = duplicateTranslator;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -34,6 +39,18 @@ public sealed class GlobalExceptionMiddleware
         }
         catch (Exception exception)
         {
+            // Task 7B.6.4: a database-level unique violation on the document
+            // constraint (raised when a concurrent confirmation or a direct
+            // insert races past the application guard) is surfaced as the same
+            // 409 DUPLICATE_DOCUMENT the guard produces. Unrelated unique
+            // violations pass through untouched.
+            if (exception is DbUpdateException dbUpdateException)
+            {
+                exception =
+                    _duplicateTranslator.Translate(dbUpdateException) ??
+                    exception;
+            }
+
             _logger.LogError(
                 exception,
                 "Unhandled exception occurred while processing {Method} {Path}",
@@ -79,6 +96,12 @@ public sealed class GlobalExceptionMiddleware
             case UnauthorizedAccessException:
                 statusCode = HttpStatusCode.Unauthorized;
                 code = "UNAUTHORIZED";
+                message = exception.Message;
+                break;
+
+            case DuplicateDocumentException:
+                statusCode = HttpStatusCode.Conflict;
+                code = "DUPLICATE_DOCUMENT";
                 message = exception.Message;
                 break;
 

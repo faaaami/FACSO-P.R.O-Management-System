@@ -232,6 +232,13 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<string>("Details")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("details")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
                     b.Property<string>("DocumentNumber")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -364,6 +371,9 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -390,6 +400,13 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
+                    b.Property<string>("SuggestedDetails")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("suggested_details")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
                     b.Property<string>("SuggestedDocumentNumber")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
@@ -411,6 +428,8 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedBy");
 
                     b.ToTable("document_extractions", (string)null);
                 });
@@ -938,7 +957,9 @@ namespace PROManagementSystem.Infrastructure.Migrations
 
                     b.HasIndex("ClientCompanyId");
 
-                    b.HasIndex("DocumentId");
+                    b.HasIndex("DocumentId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false AND \"Status\" != 6");
 
                     b.HasIndex("Status");
 
@@ -1230,7 +1251,13 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
-                    b.Property<Guid>("DocumentId")
+                    b.Property<Guid?>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("EmployeeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("EntityId")
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsDeleted")
@@ -1246,6 +1273,9 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1257,9 +1287,16 @@ namespace PROManagementSystem.Infrastructure.Migrations
 
                     b.HasIndex("DocumentId");
 
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("EntityId");
+
                     b.HasIndex("Status");
 
-                    b.ToTable("service_requests", (string)null);
+                    b.ToTable("service_requests", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_service_requests_subject", "\"EmployeeId\" IS NOT NULL OR \"EntityId\" IS NOT NULL");
+                        });
                 });
 
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.User", b =>
@@ -1349,7 +1386,8 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.HasIndex("ClientCompanyId");
 
                     b.HasIndex("Email")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"is_deleted\" = false");
 
                     b.ToTable("users", (string)null);
                 });
@@ -1399,6 +1437,16 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Navigation("DependsOnDocument");
 
                     b.Navigation("Document");
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.DocumentExtraction", b =>
+                {
+                    b.HasOne("PROManagementSystem.Domain.Entities.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("CreatedByUser");
                 });
 
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.DocumentVersion", b =>
@@ -1628,14 +1676,27 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.HasOne("PROManagementSystem.Domain.Entities.Document", "Document")
                         .WithMany()
                         .HasForeignKey("DocumentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PROManagementSystem.Domain.Entities.Employee", "Employee")
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PROManagementSystem.Domain.Entities.ClientEntity", "Entity")
+                        .WithMany()
+                        .HasForeignKey("EntityId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("ClientCompany");
 
                     b.Navigation("ConvertedRenewalTask");
 
                     b.Navigation("Document");
+
+                    b.Navigation("Employee");
+
+                    b.Navigation("Entity");
                 });
 
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.User", b =>

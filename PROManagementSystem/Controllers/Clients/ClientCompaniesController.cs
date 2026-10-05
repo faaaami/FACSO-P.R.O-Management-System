@@ -2,12 +2,14 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PROManagementSystem.Api.Common;
+using PROManagementSystem.Application.Clients.Commands.ApproveClient;
 using PROManagementSystem.Application.Clients.Commands.CreateClientCompany;
 using PROManagementSystem.Application.Clients.Commands.CreateClientContact;
 using PROManagementSystem.Application.Clients.Commands.CreateClientEntity;
 using PROManagementSystem.Application.Clients.Commands.DeleteClientCompany;
 using PROManagementSystem.Application.Clients.Commands.DeleteClientContact;
 using PROManagementSystem.Application.Clients.Commands.DeleteClientEntity;
+using PROManagementSystem.Application.Clients.Commands.RejectClient;
 using PROManagementSystem.Application.Clients.Commands.UpdateClientCompany;
 using PROManagementSystem.Application.Clients.Commands.UpdateClientContact;
 using PROManagementSystem.Application.Clients.Commands.UpdateClientEntity;
@@ -189,6 +191,7 @@ public sealed class ClientCompaniesController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetEntities(
     Guid clientId,
@@ -335,6 +338,7 @@ public sealed class ClientCompaniesController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetContacts(
     Guid clientId,
@@ -413,11 +417,51 @@ public sealed class ClientCompaniesController : ControllerBase
                 .SuccessResponse(result));
     }
 
+    [HttpPatch("{clientId:guid}/contacts/{contactId:guid}/approval")]
+    [ProducesResponseType(typeof(ApiResponse<ApproveClientResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> UpdateContactApproval(
+    Guid clientId,
+    Guid contactId,
+    [FromBody] ClientApprovalRequest request,
+    CancellationToken cancellationToken)
+    {
+        if (request.Approved is null)
+        {
+            throw new ArgumentException(
+                "The 'approved' value is required.");
+        }
+
+        if (request.Approved.Value)
+        {
+            var approve = await _sender.Send(
+                new ApproveClientCommand(clientId, contactId),
+                cancellationToken);
+
+            return Ok(
+                ApiResponse<ApproveClientResponseDto>
+                    .SuccessResponse(approve));
+        }
+
+        var reject = await _sender.Send(
+            new RejectClientCommand(clientId, contactId),
+            cancellationToken);
+
+        return Ok(
+            ApiResponse<RejectClientResponseDto>
+                .SuccessResponse(reject));
+    }
+
     [HttpGet("{id:guid}/service-report")]
     [ProducesResponseType(typeof(ApiResponse<ClientServiceReportDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetServiceReport(
         Guid id,
@@ -436,11 +480,12 @@ public sealed class ClientCompaniesController : ControllerBase
                 .SuccessResponse(result));
     }
 
-    [HttpGet("{id:guid}/service-report/pdf")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+[HttpGet("{id:guid}/service-report/pdf")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetServiceReportPdf(
         Guid id,

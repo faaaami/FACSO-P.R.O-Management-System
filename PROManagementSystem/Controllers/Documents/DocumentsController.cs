@@ -13,9 +13,14 @@ using PROManagementSystem.Application.Documents.Commands.ExtractDocument;
 using PROManagementSystem.Application.Documents.Commands.UpdateDocument;
 using PROManagementSystem.Application.Documents.Queries.GetDocumentById;
 using PROManagementSystem.Application.Documents.Queries.GetDocumentDependencies;
+using PROManagementSystem.Application.Documents.Queries.GetDocumentExtraction;
+using PROManagementSystem.Application.Documents.Queries.GetDocumentExtractionFile;
+using PROManagementSystem.Application.Documents.Queries.GetDocumentFile;
 using PROManagementSystem.Application.Documents.Queries.GetDocumentScan;
+using PROManagementSystem.Application.Documents.Queries.GetDocumentTypeSchema;
 using PROManagementSystem.Application.Documents.Queries.GetDocumentVersions;
 using PROManagementSystem.Application.Documents.Queries.GetExpiringDocuments;
+using PROManagementSystem.Application.Documents.Queries.GetPendingDocumentExtractions;
 
 namespace PROManagementSystem.Api.Controllers.Documents;
 
@@ -53,7 +58,8 @@ public sealed class DocumentsController : ControllerBase
             request.FileUrl,
             request.FileName,
             request.ContentType,
-            request.FileSize);
+            request.FileSize,
+            request.Details);
 
         var result = await _sender.Send(
             command,
@@ -70,6 +76,7 @@ public sealed class DocumentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetEntityDocuments(
     Guid entityId,
@@ -146,7 +153,8 @@ public sealed class DocumentsController : ControllerBase
             request.FileName,
             request.ContentType,
             request.FileSize,
-            request.IsActive);
+            request.IsActive,
+            request.Details);
 
         var result = await _sender.Send(
             command,
@@ -375,12 +383,181 @@ public sealed class DocumentsController : ControllerBase
 
         var result = await _sender.Send(
             query,
+
             cancellationToken);
 
         return Ok(
             ApiResponse<GetDocumentScanResponseDto>
                 .SuccessResponse(result));
     }
+
+    // ================================================================
+    // GET /api/v1/admin/documents/{documentId}/file
+    // ================================================================
+
+    [HttpGet("documents/{documentId:guid}/file")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetDocumentFile(
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        var query = new GetDocumentFileQuery(documentId);
+
+        var result = await _sender.Send(
+            query,
+            cancellationToken);
+
+        // Missing, soft-deleted, no attached file, an unsupported content type
+        // or an unreadable/traversal-rejected storage reference are all
+        // indistinguishable (404). The storage reference is never returned.
+        if (result is null)
+        {
+            return NotFound(
+                ApiResponse<object>
+                    .FailureResponse(
+                        "DOCUMENT_FILE_NOT_FOUND",
+                        "Document file was not found."));
+        }
+
+        return File(
+            result.Content,
+            result.ContentType,
+            result.FileName);
+    }
+
+    // ================================================================
+    // GET /api/v1/admin/documents/extractions
+    // ================================================================
+
+    [HttpGet("documents/extractions")]
+    [ProducesResponseType(typeof(ApiResponse<GetPendingDocumentExtractionsResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetPendingDocumentExtractions(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new GetPendingDocumentExtractionsQuery(
+            page,
+            pageSize,
+            status);
+
+        var result = await _sender.Send(
+            query,
+            cancellationToken);
+
+        return Ok(
+            ApiResponse<GetPendingDocumentExtractionsResponseDto>
+                .SuccessResponse(result));
+    }
+
+    // ================================================================
+    // GET /api/v1/admin/documents/extractions/{extractionId}
+    // ================================================================
+
+    [HttpGet("documents/extractions/{extractionId:guid}")]
+    [ProducesResponseType(typeof(ApiResponse<GetDocumentExtractionResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetDocumentExtraction(
+        Guid extractionId,
+        CancellationToken cancellationToken)
+    {
+        var query = new GetDocumentExtractionQuery(extractionId);
+
+        var result = await _sender.Send(
+            query,
+            cancellationToken);
+
+        if (result is null)
+        {
+            return NotFound(
+                ApiResponse<object>
+                    .FailureResponse(
+                        "EXTRACTION_NOT_FOUND",
+                        "Document extraction was not found."));
+        }
+
+        return Ok(
+            ApiResponse<GetDocumentExtractionResponseDto>
+                .SuccessResponse(result));
+    }
+
+    // ================================================================
+    // GET /api/v1/admin/documents/extractions/{extractionId}/file
+    // ================================================================
+
+    [HttpGet("documents/extractions/{extractionId:guid}/file")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetDocumentExtractionFile(
+        Guid extractionId,
+        CancellationToken cancellationToken)
+    {
+        var query = new GetDocumentExtractionFileQuery(extractionId);
+
+        var result = await _sender.Send(
+            query,
+            cancellationToken);
+
+        if (result is null)
+        {
+            return NotFound(
+                ApiResponse<object>
+                    .FailureResponse(
+                        "EXTRACTION_NOT_FOUND",
+                        "Document extraction was not found."));
+        }
+
+        return File(
+            result.Content,
+            result.ContentType,
+            result.FileName);
+    }
+
+    // ================================================================
+    // GET /api/v1/admin/document-types/{documentType}/schema
+    // ================================================================
+
+    [HttpGet("document-types/{documentType}/schema")]
+    [ProducesResponseType(typeof(ApiResponse<DocumentTypeSchemaResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetDocumentTypeSchema(
+        string documentType,
+        CancellationToken cancellationToken)
+    {
+        var query = new GetDocumentTypeSchemaQuery(documentType);
+
+        var result = await _sender.Send(
+            query,
+            cancellationToken);
+
+        return Ok(
+            ApiResponse<DocumentTypeSchemaResponseDto>
+                .SuccessResponse(result));
+    }
+
+    // ================================================================
+    // POST /api/v1/admin/documents/extract
+    // ================================================================
 
     [HttpPost("documents/extract")]
     [RequestSizeLimit(20 * 1024 * 1024)]
@@ -444,7 +621,8 @@ public sealed class DocumentsController : ControllerBase
             request.FileUrl,
             request.FileName,
             request.ContentType,
-            request.FileSize);
+            request.FileSize,
+            request.Details);
 
         var result = await _sender.Send(
             command,

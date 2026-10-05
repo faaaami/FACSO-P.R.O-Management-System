@@ -10,7 +10,7 @@ namespace PROManagementSystem.Api.Controllers.Agent;
 
 [ApiController]
 [Route("api/v1/agent/notifications")]
-[Authorize]
+[Authorize(Roles = "Agent")]
 public sealed class AgentNotificationsController : ControllerBase
 {
     private readonly ISender _sender;

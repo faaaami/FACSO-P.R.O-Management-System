@@ -10,5 +10,6 @@ public sealed record CreateEmployeeDocumentRequestDto(
     string? FileUrl,
     string? FileName,
     string? ContentType,
-    long? FileSize
+    long? FileSize,
+    object? Details
 );

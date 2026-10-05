@@ -21,6 +21,13 @@ public class StatusMachineTests : IntegrationTestBase
     private static readonly Guid TaskA = TestDataSeeder.Ids.TaskA;
     private static readonly Guid TaskB = TestDataSeeder.Ids.TaskB;
 
+    /// <summary>
+    /// A renewed document expiry is required to complete a task, so this
+    /// helper supplies a future one whenever the target status is Updated.
+    /// Tests that exercise that requirement itself send raw bodies instead.
+    /// </summary>
+    private static readonly DateTime FutureExpiry = DateTime.UtcNow.AddYears(1);
+
     private async Task<(HttpStatusCode code, string body)> PatchStatusAsync(
         Guid taskId,
         string status,
@@ -28,9 +35,16 @@ public class StatusMachineTests : IntegrationTestBase
         Guid? asUser = null,
         string role = "Agent")
     {
+        object payload = new { status, note };
+
+        if (string.Equals(status, "Updated", StringComparison.OrdinalIgnoreCase))
+        {
+            payload = new { status, note, renewedExpiryDate = FutureExpiry };
+        }
+
         var request = ScopePatch(
             $"/api/v1/agent/tasks/{taskId}/status",
-            new { status, note },
+            payload,
             asUser ?? AgentA,
             role);
 
@@ -210,13 +224,14 @@ public class StatusMachineTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "Admin may advance status non-sequentially (e.g. Submitted -> Approved)")]
-    public async Task AdminCanSkipToApproved()
+        "Admin role on the agent status surface returns 403 (C1 gate; " +
+        "admin-skip lives on the Admin tasks surface)")]
+    public async Task Admin_OnAgentStatusEndpoint_Returns403()
     {
         var (code, _) = await PatchStatusAsync(
             TaskA, "Approved",
             asUser: TestDataSeeder.Ids.Admin,
             role: "Admin");
-        Assert.Equal(HttpStatusCode.OK, code);
+        Assert.Equal(HttpStatusCode.Forbidden, code);
     }
 }

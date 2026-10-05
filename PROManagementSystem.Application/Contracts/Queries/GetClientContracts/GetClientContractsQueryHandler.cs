@@ -21,15 +21,21 @@ public sealed class GetClientContractsQueryHandler
         GetClientContractsQuery request,
         CancellationToken cancellationToken)
     {
-        var items =
-            await _context.ServiceContracts
+        var query =
+            _context.ServiceContracts
                 .AsNoTracking()
                 .Where(
                     x =>
                         x.ClientCompanyId ==
                             request.ClientCompanyId &&
-                        !x.IsDeleted)
+                        !x.IsDeleted);
+
+        var offset = (request.Page - 1) * request.PageSize;
+
+        var items =
+            await query
                 .OrderByDescending(x => x.StartDate)
+                .ThenBy(x => x.Id)
                 .Select(
                     x =>
                         new ServiceContractListItemDto(
@@ -41,6 +47,8 @@ public sealed class GetClientContractsQueryHandler
                             x.Status,
                             x.RetainerAmount,
                             x.Terms))
+                .Skip(offset)
+                .Take(request.PageSize)
                 .ToListAsync(cancellationToken);
 
         return new GetClientContractsResponseDto(items);

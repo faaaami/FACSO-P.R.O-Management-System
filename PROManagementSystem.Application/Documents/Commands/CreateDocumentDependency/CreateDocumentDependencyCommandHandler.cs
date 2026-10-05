@@ -11,11 +11,14 @@ public sealed class CreateDocumentDependencyCommandHandler
         CreateDocumentDependencyResponseDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly ICurrentUserService _currentUser;
 
     public CreateDocumentDependencyCommandHandler(
-        IApplicationDbContext context)
+        IApplicationDbContext context,
+        ICurrentUserService currentUser)
     {
         _context = context;
+        _currentUser = currentUser;
     }
 
     public async Task<CreateDocumentDependencyResponseDto> Handle(
@@ -102,6 +105,23 @@ public sealed class CreateDocumentDependencyCommandHandler
         };
 
         _context.DocumentDependencies.Add(dependency);
+
+        var auditLog = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = _currentUser.UserId,
+            Action = "DocumentDependencyCreated",
+            EntityType = "DocumentDependency",
+            EntityId = dependency.Id,
+            Description =
+                $"Document '{dependency.DocumentId}' now depends " +
+                $"on document '{dependency.DependsOnDocumentId}'.",
+            CreatedAt = now,
+            UpdatedAt = now,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+        _context.AuditLogs.Add(auditLog);
 
         await _context.SaveChangesAsync(
             cancellationToken);

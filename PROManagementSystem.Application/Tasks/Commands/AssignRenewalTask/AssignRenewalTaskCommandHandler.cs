@@ -1,5 +1,6 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.Common.Realtime;
 using PROManagementSystem.Domain.Entities;
@@ -15,15 +16,18 @@ public sealed class AssignRenewalTaskCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IRealtimeNotificationService _realtime;
+    private readonly ILogger<AssignRenewalTaskCommandHandler> _logger;
 
     public AssignRenewalTaskCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUser,
-        IRealtimeNotificationService realtime)
+        IRealtimeNotificationService realtime,
+        ILogger<AssignRenewalTaskCommandHandler> logger)
     {
         _context = context;
         _currentUser = currentUser;
         _realtime = realtime;
+        _logger = logger;
     }
 
     public async Task<AssignRenewalTaskResponseDto> Handle(
@@ -222,6 +226,11 @@ public sealed class AssignRenewalTaskCommandHandler
         // =========================================================
         // 11. Send SignalR TaskAssigned event
         // =========================================================
+        //
+        // After the save on purpose, and best-effort: the assignment, its history
+        // row and the agent notification are already committed at this point, so
+        // a realtime transport failure is logged rather than reported as a failed
+        // assignment. This matches the other realtime producers.
 
         var notification =
             new TaskAssignedEvent(
@@ -231,9 +240,22 @@ public sealed class AssignRenewalTaskCommandHandler
                 document.Id,
                 document.DocumentNumber);
 
-        await _realtime.SendTaskAssignedAsync(
-            notification,
-            cancellationToken);
+        // P10.7: guard only the realtime send. Assignment validation, history,
+        // notification persistence and authorization are all upstream of this
+        // block and are deliberately left untouched.
+        try
+        {
+            await _realtime.SendTaskAssignedAsync(
+                notification,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to push TaskAssigned for task {TaskId}.",
+                request.TaskId);
+        }
 
 
         // =========================================================

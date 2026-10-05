@@ -1,5 +1,6 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Domain.Entities;
 
@@ -46,7 +47,17 @@ public sealed class CreateClientEntityDocumentCommandHandler
                 "Cannot add a document to a deleted entity.");
         }
 
-        // 3. Create document
+        // 3. Reject when the same owner already holds an active document
+        //    with this type and document number.
+        await DocumentDuplicateGuard.EnsureNotDuplicateAsync(
+            _context,
+            null,
+            entity.Id,
+            request.Type,
+            request.DocumentNumber,
+            cancellationToken);
+
+        // 4. Create document
         var now = DateTime.UtcNow;
 
         var document = new Document
@@ -73,6 +84,9 @@ public sealed class CreateClientEntityDocumentCommandHandler
             ContentType = request.ContentType?.Trim(),
 
             FileSize = request.FileSize,
+
+            Details =
+                DetailsJson.ToStorage(request.Details),
 
             IsActive = true,
 
@@ -119,6 +133,7 @@ public sealed class CreateClientEntityDocumentCommandHandler
             document.ContentType,
             document.FileSize,
             document.IsActive,
-            document.CreatedAt);
+            document.CreatedAt,
+            DetailsJson.FromStorage(document.Details));
     }
 }

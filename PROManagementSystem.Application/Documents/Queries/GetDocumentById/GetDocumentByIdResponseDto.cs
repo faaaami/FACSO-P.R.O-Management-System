@@ -19,5 +19,6 @@ public sealed record GetDocumentByIdResponseDto(
     DateTime? DeletedAt,
     DateTime CreatedAt,
     DateTime UpdatedAt,
-    DocumentStatus Status
+    DocumentStatus Status,
+    object Details
 );

@@ -59,10 +59,14 @@ public sealed class StaffController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetStaff(
     [FromQuery] bool includeInactive = false,
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 20,
     CancellationToken cancellationToken = default)
     {
         var query = new GetStaffQuery(
-            includeInactive);
+            includeInactive,
+            page,
+            pageSize);
 
         var result = await _sender.Send(
             query,

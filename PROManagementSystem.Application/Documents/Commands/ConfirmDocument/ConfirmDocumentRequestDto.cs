@@ -12,5 +12,6 @@ public sealed record ConfirmDocumentRequestDto(
     string? FileUrl,
     string? FileName,
     string? ContentType,
-    long? FileSize
+    long? FileSize,
+    object? Details
 );

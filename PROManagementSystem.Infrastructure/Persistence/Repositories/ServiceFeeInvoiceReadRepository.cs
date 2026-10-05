@@ -4,6 +4,7 @@ using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.ServiceFeeInvoices.Queries.GetServiceFeeInvoiceById;
 using PROManagementSystem.Application.ServiceFeeInvoices.Queries.GetServiceFeeInvoices;
 using PROManagementSystem.Domain.Enums;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -30,7 +31,7 @@ public sealed class ServiceFeeInvoiceReadRepository
 
         var whereConditions = new List<string>
         {
-            "si.\"IsDeleted\" = false"
+            "si." + SqlColumnNames.ServiceFeeInvoiceIsDeleted + " = false"
         };
 
         var parameters = new DynamicParameters();
@@ -38,7 +39,7 @@ public sealed class ServiceFeeInvoiceReadRepository
         if (clientCompanyId.HasValue)
         {
             whereConditions.Add(
-                "si.\"ClientCompanyId\" = @ClientCompanyId");
+                "si." + SqlColumnNames.ServiceFeeInvoiceClientCompanyId + " = @ClientCompanyId");
 
             parameters.Add(
                 "ClientCompanyId",
@@ -48,7 +49,7 @@ public sealed class ServiceFeeInvoiceReadRepository
         if (renewalTaskId.HasValue)
         {
             whereConditions.Add(
-                "si.\"RenewalTaskId\" = @RenewalTaskId");
+                "si." + SqlColumnNames.ServiceFeeInvoiceRenewalTaskId + " = @RenewalTaskId");
 
             parameters.Add(
                 "RenewalTaskId",
@@ -58,7 +59,7 @@ public sealed class ServiceFeeInvoiceReadRepository
         if (status.HasValue)
         {
             whereConditions.Add(
-                "si.\"Status\" = @Status");
+                "si." + SqlColumnNames.ServiceFeeInvoiceStatus + " = @Status");
 
             parameters.Add(
                 "Status",
@@ -79,25 +80,24 @@ public sealed class ServiceFeeInvoiceReadRepository
 
         var dataSql = $"""
             SELECT
-                si."Id" AS Id,
-                si."ClientCompanyId" AS ClientCompanyId,
-                si."RenewalTaskId" AS RenewalTaskId,
-                si."InvoiceNumber" AS InvoiceNumber,
-                si."InvoiceDate" AS InvoiceDate,
-                si."DueDate" AS DueDate,
-                si."Amount" AS Amount,
-                si."Currency" AS Currency,
-                si."Status" AS Status,
-                si."Description" AS Description,
-                si."PaidAt" AS PaidAt,
-                si."VoidedAt" AS VoidedAt,
-                si."VoidReason" AS VoidReason,
-                si."CreatedAt" AS CreatedAt
+                si.{SqlColumnNames.ServiceFeeInvoiceId} AS Id,
+                si.{SqlColumnNames.ServiceFeeInvoiceClientCompanyId} AS ClientCompanyId,
+                si.{SqlColumnNames.ServiceFeeInvoiceRenewalTaskId} AS RenewalTaskId,
+                si.{SqlColumnNames.ServiceFeeInvoiceInvoiceNumber} AS InvoiceNumber,
+                si.{SqlColumnNames.ServiceFeeInvoiceInvoiceDate} AS InvoiceDate,
+                si.{SqlColumnNames.ServiceFeeInvoiceDueDate} AS DueDate,
+                si.{SqlColumnNames.ServiceFeeInvoiceAmount} AS Amount,
+                si.{SqlColumnNames.ServiceFeeInvoiceCurrency} AS Currency,
+                si.{SqlColumnNames.ServiceFeeInvoiceStatus} AS Status,
+                si.{SqlColumnNames.ServiceFeeInvoiceDescription} AS Description,
+                si.{SqlColumnNames.ServiceFeeInvoicePaidAt} AS PaidAt,
+                si.{SqlColumnNames.ServiceFeeInvoiceVoidedAt} AS VoidedAt,
+                si.{SqlColumnNames.ServiceFeeInvoiceVoidReason} AS VoidReason,
+                si.{SqlColumnNames.ServiceFeeInvoiceCreatedAt} AS CreatedAt
             FROM service_fee_invoices si
             {whereClause}
-            ORDER BY si."CreatedAt" DESC
-            OFFSET @Offset
-            LIMIT @PageSize;
+            ORDER BY si.{SqlColumnNames.ServiceFeeInvoiceCreatedAt} DESC
+            {SqlSnippets.Pagination};
             """;
 
         parameters.Add("Offset", offset);
@@ -133,31 +133,56 @@ public sealed class ServiceFeeInvoiceReadRepository
 
     public async Task<GetServiceFeeInvoiceByIdResponseDto?> GetByIdAsync(
         Guid id,
+        Guid? clientCompanyId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var parameters = new DynamicParameters();
+        parameters.Add("Id", id);
+
+        var conditions = new List<string>
+        {
+            "si." + SqlColumnNames.ServiceFeeInvoiceId + " = @Id",
+            "si." + SqlColumnNames.ServiceFeeInvoiceIsDeleted + " = false"
+        };
+
+        if (clientCompanyId.HasValue)
+        {
+            conditions.Add(
+                "si." + SqlColumnNames.ServiceFeeInvoiceClientCompanyId + " = @ClientCompanyId");
+            parameters.Add("ClientCompanyId", clientCompanyId.Value);
+        }
+
+        var whereClause =
+            string.Join(" AND ", conditions);
+
+        var sql = $"""
             SELECT
-                si."Id" AS Id,
-                si."ClientCompanyId" AS ClientCompanyId,
+                si.{SqlColumnNames.ServiceFeeInvoiceId} AS Id,
+                si.{SqlColumnNames.ServiceFeeInvoiceClientCompanyId} AS ClientCompanyId,
                 cc.company_name AS ClientCompanyName,
-                si."RenewalTaskId" AS RenewalTaskId,
-                si."InvoiceNumber" AS InvoiceNumber,
-                si."InvoiceDate" AS InvoiceDate,
-                si."DueDate" AS DueDate,
-                si."Amount" AS Amount,
-                si."Currency" AS Currency,
-                si."Status" AS Status,
-                si."Description" AS Description,
-                si."PaidAt" AS PaidAt,
-                si."VoidedAt" AS VoidedAt,
-                si."VoidReason" AS VoidReason,
-                si."CreatedAt" AS CreatedAt,
-                si."UpdatedAt" AS UpdatedAt
+                si.{SqlColumnNames.ServiceFeeInvoiceRenewalTaskId} AS RenewalTaskId,
+                si.{SqlColumnNames.ServiceFeeInvoiceInvoiceNumber} AS InvoiceNumber,
+                si.{SqlColumnNames.ServiceFeeInvoiceInvoiceDate} AS InvoiceDate,
+                si.{SqlColumnNames.ServiceFeeInvoiceDueDate} AS DueDate,
+                si.{SqlColumnNames.ServiceFeeInvoiceAmount} AS Amount,
+                si.{SqlColumnNames.ServiceFeeInvoiceCurrency} AS Currency,
+                si.{SqlColumnNames.ServiceFeeInvoiceStatus} AS Status,
+                si.{SqlColumnNames.ServiceFeeInvoiceDescription} AS Description,
+                si.{SqlColumnNames.ServiceFeeInvoicePaidAt} AS PaidAt,
+                si.{SqlColumnNames.ServiceFeeInvoiceVoidedAt} AS VoidedAt,
+                si.{SqlColumnNames.ServiceFeeInvoiceVoidReason} AS VoidReason,
+                si.{SqlColumnNames.ServiceFeeInvoiceCreatedAt} AS CreatedAt,
+                si.{SqlColumnNames.ServiceFeeInvoiceUpdatedAt} AS UpdatedAt,
+                po.{SqlColumnNames.PaymentOrderId} AS PaymentOrderId,
+                po.{SqlColumnNames.PaymentOrderStatus} AS PaymentOrderStatus,
+                po.{SqlColumnNames.PaymentOrderRazorpayOrderId} AS RazorpayOrderId
             FROM service_fee_invoices si
             INNER JOIN client_companies cc
-                ON cc.id = si."ClientCompanyId"
-            WHERE si."Id" = @Id
-              AND si."IsDeleted" = false;
+                ON cc.id = si.{SqlColumnNames.ServiceFeeInvoiceClientCompanyId}
+            LEFT JOIN payment_orders po
+                ON po.{SqlColumnNames.PaymentOrderServiceFeeInvoiceId} = si.{SqlColumnNames.ServiceFeeInvoiceId}
+                AND po.{SqlColumnNames.PaymentOrderIsDeleted} = false
+            WHERE {whereClause};
             """;
 
         await using var connection =
@@ -168,7 +193,7 @@ public sealed class ServiceFeeInvoiceReadRepository
             GetServiceFeeInvoiceByIdResponseDto>(
             new CommandDefinition(
                 sql,
-                new { Id = id },
+                parameters,
                 cancellationToken:
                     cancellationToken));
     }

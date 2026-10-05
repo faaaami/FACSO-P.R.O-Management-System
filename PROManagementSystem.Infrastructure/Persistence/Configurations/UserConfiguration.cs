@@ -27,7 +27,8 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasMaxLength(255);
 
         builder.HasIndex(x => x.Email)
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"is_deleted\" = false");
 
         builder.Property(x => x.PasswordHash)
             .HasColumnName("password_hash")

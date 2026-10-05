@@ -19,14 +19,10 @@ public sealed class DevelopmentEmailService : IEmailService
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            """
-            EMAIL VERIFICATION
-            ------------------
-            Email: {Email}
-            Verification Token: {VerificationToken}
-            """,
-            email,
-            verificationToken);
+            "Development email simulated: verification email for " +
+            "{Email} was generated. The verification token is " +
+            "intentionally never logged.",
+            email);
 
         return Task.CompletedTask;
     }
@@ -37,37 +33,26 @@ public sealed class DevelopmentEmailService : IEmailService
     CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            """
-        PASSWORD RESET
-        ------------------
-        Email: {Email}
-        Reset Token: {ResetToken}
-        """,
-            email,
-            resetToken);
+            "Development email simulated: password reset email for " +
+            "{Email} was generated. The reset token is " +
+            "intentionally never logged.",
+            email);
 
         return Task.CompletedTask;
     }
 
-    public Task SendClientInvitationAsync(
+public Task SendClientInvitationAsync(
     string email,
     string fullName,
-    string temporaryPassword,
     CancellationToken cancellationToken = default)
-    {
-        _logger.LogInformation(
-            """
-        CLIENT INVITATION
-        ------------------
-        Name: {FullName}
-        Email: {Email}
-        Temporary Password: {TemporaryPassword}
-        """,
-            fullName,
-            email,
-            temporaryPassword);
+{
+    _logger.LogInformation(
+        "Development email simulated: client invitation for " +
+        "{FullName} <{Email}> was generated. No credential is " +
+        "transmitted: the Admin shares the password directly.",
+        fullName,
+        email);
 
-        return Task.CompletedTask;
-    }
+    return Task.CompletedTask;
 }
-
+}

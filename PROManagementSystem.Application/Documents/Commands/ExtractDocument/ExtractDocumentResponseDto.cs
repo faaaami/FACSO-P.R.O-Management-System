@@ -9,5 +9,6 @@ public sealed record ExtractDocumentResponseDto(
     DateTime? SuggestedIssueDate,
     DateTime? SuggestedExpiryDate,
     string? SuggestedOwnerType,
-    decimal Confidence
+    decimal Confidence,
+    object SuggestedDetails
 );

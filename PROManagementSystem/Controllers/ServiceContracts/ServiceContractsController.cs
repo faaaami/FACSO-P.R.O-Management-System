@@ -12,7 +12,7 @@ namespace PROManagementSystem.Api.Controllers.ServiceContracts;
 
 [ApiController]
 [Route("api/v1")]
-[Authorize]
+[Authorize(Roles = "Admin")]
 public sealed class ServiceContractsController : ControllerBase
 {
     private readonly ISender _sender;
@@ -50,11 +50,13 @@ public sealed class ServiceContractsController : ControllerBase
     [HttpGet("clients/{id:guid}/contracts")]
     public async Task<IActionResult> GetHistory(
     Guid id,
-    CancellationToken cancellationToken)
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 20,
+    CancellationToken cancellationToken = default)
     {
         var result =
             await _sender.Send(
-                new GetClientContractsQuery(id),
+                new GetClientContractsQuery(id, page, pageSize),
                 cancellationToken);
 
         return Ok(

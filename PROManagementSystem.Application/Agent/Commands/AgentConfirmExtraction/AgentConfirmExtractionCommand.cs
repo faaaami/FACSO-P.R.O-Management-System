@@ -15,5 +15,6 @@ public sealed record AgentConfirmExtractionCommand(
     string? FileUrl,
     string? FileName,
     string? ContentType,
-    long? FileSize
+    long? FileSize,
+    object? Details
 ) : IRequest<ConfirmDocumentResponseDto>;

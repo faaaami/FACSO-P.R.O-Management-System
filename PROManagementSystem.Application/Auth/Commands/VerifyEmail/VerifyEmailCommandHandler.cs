@@ -3,6 +3,7 @@ using System.Text;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Domain.Entities;
 
 namespace PROManagementSystem.Application.Auth.Commands.VerifyEmail;
 
@@ -64,11 +65,28 @@ public sealed class VerifyEmailCommandHandler
         storedToken.User.UpdatedAt = DateTime.UtcNow;
         storedToken.UpdatedAt = DateTime.UtcNow;
 
-        // 9. Save changes
+        // 9. Record the verification
+        var auditLog = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = null,
+            Action = "EmailVerified",
+            EntityType = "User",
+            EntityId = storedToken.User.Id,
+            Description =
+                "User email was verified.",
+            CreatedAt = storedToken.User.UpdatedAt,
+            UpdatedAt = storedToken.User.UpdatedAt,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+        _context.AuditLogs.Add(auditLog);
+
+        // 10. Save changes
         await _context.SaveChangesAsync(
             cancellationToken);
 
-        // 10. Return DTO
+        // 11. Return DTO
         return new VerifyEmailResponseDto(
             storedToken.User.Id,
             storedToken.User.Email,

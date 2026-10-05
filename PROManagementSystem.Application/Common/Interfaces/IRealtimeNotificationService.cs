@@ -11,4 +11,9 @@ public interface IRealtimeNotificationService
     Task SendTaskStatusChangedAsync(
         TaskStatusChangedEvent notification,
         CancellationToken cancellationToken);
+
+    Task SendNotificationReceivedAsync(
+        Guid userId,
+        NotificationReceivedDto notification,
+        CancellationToken cancellationToken);
 }

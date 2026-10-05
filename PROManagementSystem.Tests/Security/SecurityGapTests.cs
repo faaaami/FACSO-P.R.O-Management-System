@@ -7,13 +7,15 @@ using Xunit;
 namespace PROManagementSystem.Tests.Security;
 
 /// <summary>
-/// Documents the REPORTED-ONLY MEDIUM gap in <see cref="DocumentExtraction"/>:
-/// it has no <c>CreatedBy</c> column, and <c>AgentConfirmExtractionCommandHandler</c>
-/// only verifies that the SELECTED owner (employee/entity) is in the acting
-/// agent's task-linked scope. It does not check that the extraction was
-/// created by the acting agent. Consequently, when two agents share a task on
-/// the same owner, either agent can confirm the other's pending extraction.
-/// The user instructed that this gap is report-only and must NOT be fixed.
+/// Documents the evolved <see cref="DocumentExtraction"/> ownership behavior
+/// after the Day 6 H1 fix. H1 added a nullable <c>CreatedBy</c> column: an
+/// extraction created by Agent X can only be confirmed by Agent X (any other
+/// agent gets 404 regardless of owner scope). Rows where <c>CreatedBy IS
+/// NULL</c> are treated LEGACY and keep the pre-H1 behavior: any agent whose
+/// owner scope passes may confirm them. The tests below lock in the legacy
+/// NULL-row path plus the unchanged out-of-scope and already-processed
+/// guarantees; the ownership-specific matrix lives in
+/// <see cref="ExtractionOwnershipTests"/>.
 /// </summary>
 [Collection(DatabaseCollection.Name)]
 public class SecurityGapTests : IntegrationTestBase
@@ -54,14 +56,13 @@ public class SecurityGapTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "GAP (report-only): an agent can confirm a Pending extraction whose " +
-        "owner is in their scope even if another agent initiated it (201).")]
+        "LEGACY (H1): a NULL CreatedBy extraction row keeps pre-H1 behavior - " +
+        "any in-scope agent may confirm it (201).")]
     public async Task AgentConfirmsPendingExtraction_InScope_Returns201()
     {
-        // Simulate: extraction uploaded by Agent B for Employee A. Because
-        // DocumentExtraction has no CreatedBy, nothing ties the extraction
-        // to Agent B. Agent A has Task A -> Document A -> Employee A, so the
-        // owner-scope check passes and Agent A may confirm Agent B's draft.
+        // Simulate a legacy row created before the H1 CreatedBy column
+        // existed: CreatedBy is NULL, so no ownership gate applies and the
+        // pre-H1 scope-only check governs confirmation.
         await SeedPendingExtractionAsync(
             "extracted-employee-a.pdf", DocumentType.Passport);
 
@@ -72,7 +73,8 @@ public class SecurityGapTests : IntegrationTestBase
                 employeeId = TestDataSeeder.Ids.EmployeeA,
                 clientEntityId = (Guid?)null,
                 type = DocumentType.Passport,
-                documentNumber = "DOC-NEW-A-001"
+                documentNumber = "DOC-NEW-A-001",
+                details = new { passportNumber = "P-NEW-A-001" }
             },
             TestDataSeeder.Ids.AgentA);
 
@@ -95,7 +97,8 @@ public class SecurityGapTests : IntegrationTestBase
                 employeeId = TestDataSeeder.Ids.EmployeeB,
                 clientEntityId = (Guid?)null,
                 type = DocumentType.Passport,
-                documentNumber = "DOC-B-001"
+                documentNumber = "DOC-B-001",
+                details = new { passportNumber = "P-B-001" }
             },
             TestDataSeeder.Ids.AgentA);
 
@@ -139,7 +142,8 @@ public class SecurityGapTests : IntegrationTestBase
                 employeeId = TestDataSeeder.Ids.EmployeeA,
                 clientEntityId = (Guid?)null,
                 type = DocumentType.Visa,
-                documentNumber = "DOC-ALREADY"
+                documentNumber = "DOC-ALREADY",
+                details = new { visaNumber = "V-ALREADY-001" }
             },
             TestDataSeeder.Ids.AgentA);
 

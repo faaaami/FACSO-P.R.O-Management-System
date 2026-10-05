@@ -13,7 +13,7 @@ namespace PROManagementSystem.Api.Controllers.Agent;
 
 [ApiController]
 [Route("api/v1/agent/clients")]
-[Authorize]
+[Authorize(Roles = "Agent")]
 public sealed class AgentClientsController : ControllerBase
 {
     private readonly ISender _sender;
@@ -91,6 +91,7 @@ public sealed class AgentClientsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<GetClientEntitiesResponseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetEntities(
         Guid id,

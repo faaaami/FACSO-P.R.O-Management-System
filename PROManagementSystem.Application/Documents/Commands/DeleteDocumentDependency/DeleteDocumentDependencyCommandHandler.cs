@@ -1,6 +1,7 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Domain.Entities;
 
 namespace PROManagementSystem.Application.Documents.Commands.DeleteDocumentDependency;
 
@@ -10,11 +11,14 @@ public sealed class DeleteDocumentDependencyCommandHandler
         DeleteDocumentDependencyResponseDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly ICurrentUserService _currentUser;
 
     public DeleteDocumentDependencyCommandHandler(
-        IApplicationDbContext context)
+        IApplicationDbContext context,
+        ICurrentUserService currentUser)
     {
         _context = context;
+        _currentUser = currentUser;
     }
 
     public async Task<DeleteDocumentDependencyResponseDto> Handle(
@@ -49,6 +53,23 @@ public sealed class DeleteDocumentDependencyCommandHandler
         dependency.IsDeleted = true;
         dependency.DeletedAt = now;
         dependency.UpdatedAt = now;
+
+        var auditLog = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = _currentUser.UserId,
+            Action = "DocumentDependencyDeleted",
+            EntityType = "DocumentDependency",
+            EntityId = dependency.Id,
+            Description =
+                $"Document '{dependency.DocumentId}' no longer depends " +
+                $"on document '{dependency.DependsOnDocumentId}'.",
+            CreatedAt = now,
+            UpdatedAt = now,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+        _context.AuditLogs.Add(auditLog);
 
         await _context.SaveChangesAsync(
             cancellationToken);

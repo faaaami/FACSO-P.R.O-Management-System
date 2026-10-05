@@ -15,8 +15,10 @@ using PROManagementSystem.Application.Tasks.Queries.GetRenewalTaskById;
 using PROManagementSystem.Application.Tasks.Queries.GetRenewalTaskHistory;
 using PROManagementSystem.Application.Tasks.Queries.GetRenewalTasks;
 using PROManagementSystem.Application.Tasks.Queries.GetRenewalTaskSteps;
+using PROManagementSystem.Application.Documents.Queries.GetDocumentDependencies;
 using PROManagementSystem.Application.Documents.Queries.GetExpiringDocuments;
 using PROManagementSystem.Domain.Enums;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -31,6 +33,55 @@ public sealed class RenewalTaskReadRepository
         _dataSource = dataSource;
     }
 
+    // Shared SELECT / GROUP BY projections for the task-detail queries
+    // (admin GetByIdAsync and agent-scoped GetAgentTaskByIdAsync).
+    private static readonly string TaskDetailSelect =
+        $$"""
+        rt.{{SqlColumnNames.RenewalTaskId}} AS Id,
+        rt.{{SqlColumnNames.RenewalTaskStatus}} AS Status,
+        rt.{{SqlColumnNames.RenewalTaskDocumentId}} AS DocumentId,
+        d.id AS Document_Id,
+        d.type AS Document_Type,
+        d.document_number AS Document_DocumentNumber,
+        d.issue_date AS Document_IssueDate,
+        d.expiry_date AS Document_ExpiryDate,
+        d.file_name AS Document_FileName,
+        rt.{{SqlColumnNames.RenewalTaskClientCompanyId}} AS ClientCompanyId,
+        u.id AS Staff_Id,
+        u.full_name AS Staff_FullName,
+        u.email AS Staff_Email,
+        rt.{{SqlColumnNames.RenewalTaskBlockedReason}} AS BlockedReason,
+        rt.{{SqlColumnNames.RenewalTaskBlockedSince}} AS BlockedSince,
+        rt.{{SqlColumnNames.RenewalTaskCompletedAt}} AS CompletedAt,
+        rt.{{SqlColumnNames.RenewalTaskServiceFeeAmount}} AS ServiceFeeAmount,
+        COUNT(sl.{{SqlColumnNames.RenewalStepLogId}}) AS StepLogCount,
+        rt.{{SqlColumnNames.RenewalTaskCreatedAt}} AS CreatedAt,
+        rt.{{SqlColumnNames.RenewalTaskUpdatedAt}} AS UpdatedAt
+        """;
+
+    private static readonly string TaskDetailGroupBy =
+        $$"""
+        rt.{{SqlColumnNames.RenewalTaskId}},
+        rt.{{SqlColumnNames.RenewalTaskStatus}},
+        rt.{{SqlColumnNames.RenewalTaskDocumentId}},
+        d.id,
+        d.type,
+        d.document_number,
+        d.issue_date,
+        d.expiry_date,
+        d.file_name,
+        rt.{{SqlColumnNames.RenewalTaskClientCompanyId}},
+        u.id,
+        u.full_name,
+        u.email,
+        rt.{{SqlColumnNames.RenewalTaskBlockedReason}},
+        rt.{{SqlColumnNames.RenewalTaskBlockedSince}},
+        rt.{{SqlColumnNames.RenewalTaskCompletedAt}},
+        rt.{{SqlColumnNames.RenewalTaskServiceFeeAmount}},
+        rt.{{SqlColumnNames.RenewalTaskCreatedAt}},
+        rt.{{SqlColumnNames.RenewalTaskUpdatedAt}}
+        """;
+
     // ============================================================
     // GET /admin/tasks
     // ============================================================
@@ -39,11 +90,15 @@ public sealed class RenewalTaskReadRepository
         RenewalTaskStatus? status,
         Guid? assignedStaffId,
         Guid? clientCompanyId,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken)
     {
+        var offset = (page - 1) * pageSize;
+
         var whereConditions = new List<string>
         {
-            "\"IsDeleted\" = false"
+            SqlColumnNames.RenewalTaskIsDeleted + " = false"
         };
 
         var parameters = new DynamicParameters();
@@ -52,7 +107,7 @@ public sealed class RenewalTaskReadRepository
         if (status.HasValue)
         {
             whereConditions.Add(
-                "\"Status\" = @Status");
+                SqlColumnNames.RenewalTaskStatus + " = @Status");
 
             parameters.Add(
                 "Status",
@@ -63,7 +118,8 @@ public sealed class RenewalTaskReadRepository
         if (assignedStaffId.HasValue)
         {
             whereConditions.Add(
-                "\"AssignedStaffId\" = @AssignedStaffId");
+                SqlColumnNames.RenewalTaskAssignedStaffId +
+                " = @AssignedStaffId");
 
             parameters.Add(
                 "AssignedStaffId",
@@ -74,7 +130,8 @@ public sealed class RenewalTaskReadRepository
         if (clientCompanyId.HasValue)
         {
             whereConditions.Add(
-                "\"ClientCompanyId\" = @ClientCompanyId");
+                SqlColumnNames.RenewalTaskClientCompanyId +
+                " = @ClientCompanyId");
 
             parameters.Add(
                 "ClientCompanyId",
@@ -97,19 +154,29 @@ public sealed class RenewalTaskReadRepository
         // Data
         var dataSql = $"""
             SELECT
-                "Id" AS Id,
-                "DocumentId" AS DocumentId,
-                "ClientCompanyId" AS ClientCompanyId,
-                "AssignedStaffId" AS AssignedStaffId,
-                "Status" AS Status,
-                "BlockedReason" AS BlockedReason,
-                "BlockedSince" AS BlockedSince,
-                "CompletedAt" AS CompletedAt,
-                "CreatedAt" AS CreatedAt
+                {SqlColumnNames.RenewalTaskId} AS Id,
+                {SqlColumnNames.RenewalTaskDocumentId} AS DocumentId,
+                {SqlColumnNames.RenewalTaskClientCompanyId} AS ClientCompanyId,
+                {SqlColumnNames.RenewalTaskAssignedStaffId} AS AssignedStaffId,
+                {SqlColumnNames.RenewalTaskStatus} AS Status,
+                {SqlColumnNames.RenewalTaskBlockedReason} AS BlockedReason,
+                {SqlColumnNames.RenewalTaskBlockedSince} AS BlockedSince,
+                {SqlColumnNames.RenewalTaskCompletedAt} AS CompletedAt,
+                {SqlColumnNames.RenewalTaskCreatedAt} AS CreatedAt
             FROM renewal_tasks
             {whereClause}
-            ORDER BY "CreatedAt" DESC;
+            ORDER BY {SqlColumnNames.RenewalTaskCreatedAt} DESC,
+                     {SqlColumnNames.RenewalTaskId} ASC
+            {SqlSnippets.Pagination};
             """;
+
+        parameters.Add(
+            "Offset",
+            offset);
+
+        parameters.Add(
+            "PageSize",
+            pageSize);
 
         await using var connection =
             await _dataSource.OpenConnectionAsync(
@@ -144,73 +211,26 @@ public sealed class RenewalTaskReadRepository
         Guid taskId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
     SELECT
-        rt."Id" AS Id,
-        rt."Status" AS Status,
-
-        rt."DocumentId" AS DocumentId,
-
-        d.id AS Document_Id,
-        d.type AS Document_Type,
-        d.document_number AS Document_DocumentNumber,
-        d.issue_date AS Document_IssueDate,
-        d.expiry_date AS Document_ExpiryDate,
-        d.file_name AS Document_FileName,
-
-        rt."ClientCompanyId" AS ClientCompanyId,
-
-        u.id AS Staff_Id,
-        u.full_name AS Staff_FullName,
-        u.email AS Staff_Email,
-
-        rt."BlockedReason" AS BlockedReason,
-        rt."BlockedSince" AS BlockedSince,
-        rt."CompletedAt" AS CompletedAt,
-
-        COUNT(sl."Id") AS StepLogCount,
-
-        rt."CreatedAt" AS CreatedAt,
-        rt."UpdatedAt" AS UpdatedAt
+        {TaskDetailSelect}
 
     FROM renewal_tasks rt
 
     INNER JOIN documents d
-        ON d.id = rt."DocumentId"
+        ON d.id = rt.{SqlColumnNames.RenewalTaskDocumentId}
 
     LEFT JOIN users u
-        ON u.id = rt."AssignedStaffId"
+        ON u.id = rt.{SqlColumnNames.RenewalTaskAssignedStaffId}
 
     LEFT JOIN renewal_step_logs sl
-        ON sl."RenewalTaskId" = rt."Id"
+        ON sl.{SqlColumnNames.RenewalStepLogRenewalTaskId} = rt.{SqlColumnNames.RenewalTaskId}
 
-    WHERE rt."Id" = @TaskId
-      AND rt."IsDeleted" = false
+    WHERE rt.{SqlColumnNames.RenewalTaskId} = @TaskId
+      AND rt.{SqlColumnNames.RenewalTaskIsDeleted} = false
 
     GROUP BY
-        rt."Id",
-        rt."Status",
-        rt."DocumentId",
-
-        d.id,
-        d.type,
-        d.document_number,
-        d.issue_date,
-        d.expiry_date,
-        d.file_name,
-
-        rt."ClientCompanyId",
-
-        u.id,
-        u.full_name,
-        u.email,
-
-        rt."BlockedReason",
-        rt."BlockedSince",
-        rt."CompletedAt",
-
-        rt."CreatedAt",
-        rt."UpdatedAt";
+        {TaskDetailGroupBy};
     """;
 
         await using var connection =
@@ -258,6 +278,7 @@ public sealed class RenewalTaskReadRepository
             row.BlockedReason,
             row.BlockedSince,
             row.CompletedAt,
+            row.ServiceFeeAmount,
             row.StepLogCount,
             row.CreatedAt,
             row.UpdatedAt);
@@ -268,57 +289,50 @@ public sealed class RenewalTaskReadRepository
     Guid taskId,
     CancellationToken cancellationToken)
     {
-        const string taskExistsSql = """
+        var sql = $$"""
         SELECT COUNT(*)
         FROM renewal_tasks
-        WHERE "Id" = @TaskId
-          AND "IsDeleted" = false;
-        """;
+        WHERE {{SqlColumnNames.RenewalTaskId}} = @TaskId
+          AND {{SqlColumnNames.RenewalTaskIsDeleted}} = false;
 
-        const string stepsSql = """
         SELECT
-            "Id" AS Id,
-            "StepName" AS StepName,
-            "CompletedBy" AS CompletedBy,
-            "CompletedAt" AS CompletedAt,
-            "ReferenceNumber" AS ReferenceNumber,
-            "ProofFileUrl" AS ProofFileUrl
+            {{SqlColumnNames.RenewalStepLogId}} AS Id,
+            {{SqlColumnNames.RenewalStepLogStepName}} AS StepName,
+            {{SqlColumnNames.RenewalStepLogCompletedBy}} AS CompletedBy,
+            {{SqlColumnNames.RenewalStepLogCompletedAt}} AS CompletedAt,
+            {{SqlColumnNames.RenewalStepLogReferenceNumber}} AS ReferenceNumber,
+            {{SqlColumnNames.RenewalStepLogProofFileUrl}} AS ProofFileUrl
         FROM renewal_step_logs
-        WHERE "RenewalTaskId" = @TaskId
-          AND "IsDeleted" = false
-        ORDER BY "CompletedAt" ASC;
+        WHERE {{SqlColumnNames.RenewalStepLogRenewalTaskId}} = @TaskId
+          AND {{SqlColumnNames.RenewalStepLogIsDeleted}} = false
+        ORDER BY {{SqlColumnNames.RenewalStepLogCompletedAt}} ASC;
         """;
 
         await using var connection =
             await _dataSource.OpenConnectionAsync(
                 cancellationToken);
 
-        var taskExists =
-            await connection.ExecuteScalarAsync<int>(
+        using var multi =
+            await connection.QueryMultipleAsync(
                 new CommandDefinition(
-                    taskExistsSql,
+                    sql,
                     new
                     {
                         TaskId = taskId
                     },
                     cancellationToken: cancellationToken));
+
+        var taskExists =
+            await multi.ReadSingleAsync<int>();
 
         if (taskExists == 0)
         {
             return null;
         }
 
-        var items =
-            await connection.QueryAsync<RenewalStepLogDto>(
-                new CommandDefinition(
-                    stepsSql,
-                    new
-                    {
-                        TaskId = taskId
-                    },
-                    cancellationToken: cancellationToken));
-
-        var stepItems = items.ToList();
+        var stepItems =
+            (await multi.ReadAsync<RenewalStepLogDto>())
+            .ToList();
 
         return new GetRenewalTaskStepsResponseDto(
             taskId,
@@ -330,56 +344,196 @@ public sealed class RenewalTaskReadRepository
     Guid taskId,
     CancellationToken cancellationToken)
     {
-        const string taskExistsSql = """
+        var sql = $$"""
         SELECT COUNT(*)
         FROM renewal_tasks
-        WHERE "Id" = @TaskId
-          AND "IsDeleted" = false;
-        """;
+        WHERE {{SqlColumnNames.RenewalTaskId}} = @TaskId
+          AND {{SqlColumnNames.RenewalTaskIsDeleted}} = false;
 
-        const string historySql = """
         SELECT
-            "Id" AS Id,
-            "Status" AS Status,
-            "ChangedBy" AS ChangedBy,
-            "ChangedAt" AS ChangedAt,
-            "Note" AS Note
+            {{SqlColumnNames.RenewalTaskHistoryId}} AS Id,
+            {{SqlColumnNames.RenewalTaskHistoryStatus}} AS Status,
+            {{SqlColumnNames.RenewalTaskHistoryChangedBy}} AS ChangedBy,
+            {{SqlColumnNames.RenewalTaskHistoryChangedAt}} AS ChangedAt,
+            {{SqlColumnNames.RenewalTaskHistoryNote}} AS Note
         FROM renewal_task_histories
-        WHERE "RenewalTaskId" = @TaskId
-          AND "IsDeleted" = false
-        ORDER BY "ChangedAt" ASC;
+        WHERE {{SqlColumnNames.RenewalTaskHistoryRenewalTaskId}} = @TaskId
+          AND {{SqlColumnNames.RenewalTaskHistoryIsDeleted}} = false
+        ORDER BY {{SqlColumnNames.RenewalTaskHistoryChangedAt}} ASC;
         """;
 
         await using var connection =
             await _dataSource.OpenConnectionAsync(
                 cancellationToken);
 
-        var taskExists =
-            await connection.ExecuteScalarAsync<int>(
+        using var multi =
+            await connection.QueryMultipleAsync(
                 new CommandDefinition(
-                    taskExistsSql,
+                    sql,
                     new
                     {
                         TaskId = taskId
                     },
                     cancellationToken: cancellationToken));
+
+        var taskExists =
+            await multi.ReadSingleAsync<int>();
 
         if (taskExists == 0)
         {
             return null;
         }
 
-        var items =
-            await connection.QueryAsync<RenewalTaskHistoryDto>(
+        var historyItems =
+            (await multi.ReadAsync<RenewalTaskHistoryDto>())
+            .ToList();
+
+        return new GetRenewalTaskHistoryResponseDto(
+            taskId,
+            historyItems,
+            historyItems.Count);
+    }
+
+
+    // ============================================================
+    // GET /client/tasks/{id} — company-scoped task detail
+    // ============================================================
+
+    public async Task<GetRenewalTaskByIdResponseDto?> GetByIdForCompanyAsync(
+        Guid taskId,
+        Guid clientCompanyId,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+    SELECT
+        {TaskDetailSelect}
+
+    FROM renewal_tasks rt
+
+    INNER JOIN documents d
+        ON d.id = rt.{SqlColumnNames.RenewalTaskDocumentId}
+
+    LEFT JOIN users u
+        ON u.id = rt.{SqlColumnNames.RenewalTaskAssignedStaffId}
+
+    LEFT JOIN renewal_step_logs sl
+        ON sl.{SqlColumnNames.RenewalStepLogRenewalTaskId} = rt.{SqlColumnNames.RenewalTaskId}
+
+    WHERE rt.{SqlColumnNames.RenewalTaskId} = @TaskId
+      AND rt.{SqlColumnNames.RenewalTaskClientCompanyId} = @ClientCompanyId
+      AND rt.{SqlColumnNames.RenewalTaskIsDeleted} = false
+
+    GROUP BY
+        {TaskDetailGroupBy};
+    """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(
+                cancellationToken);
+
+        var row =
+            await connection.QuerySingleOrDefaultAsync<
+                RenewalTaskDetailReadModel>(
                 new CommandDefinition(
-                    historySql,
+                    sql,
                     new
                     {
-                        TaskId = taskId
+                        TaskId = taskId,
+                        ClientCompanyId = clientCompanyId
                     },
                     cancellationToken: cancellationToken));
 
-        var historyItems = items.ToList();
+        if (row is null)
+        {
+            return null;
+        }
+
+        return new GetRenewalTaskByIdResponseDto(
+            row.Id,
+            row.Status,
+            row.DocumentId,
+
+            new DocumentInfoDto(
+                row.Document_Id,
+                row.Document_Type,
+                row.Document_DocumentNumber,
+                row.Document_IssueDate,
+                row.Document_ExpiryDate,
+                row.Document_FileName),
+
+            row.ClientCompanyId,
+
+            row.Staff_Id.HasValue
+                ? new AssignedStaffInfoDto(
+                    row.Staff_Id.Value,
+                    row.Staff_FullName!,
+                    row.Staff_Email!)
+                : null,
+
+            row.BlockedReason,
+            row.BlockedSince,
+            row.CompletedAt,
+            row.ServiceFeeAmount,
+            row.StepLogCount,
+            row.CreatedAt,
+            row.UpdatedAt);
+    }
+
+
+    // ============================================================
+    // GET /client/tasks/{id}/history — company-scoped history
+    // ============================================================
+
+    public async Task<GetRenewalTaskHistoryResponseDto?> GetHistoryForCompanyAsync(
+        Guid taskId,
+        Guid clientCompanyId,
+        CancellationToken cancellationToken)
+    {
+        var sql = $$"""
+        SELECT COUNT(*)
+        FROM renewal_tasks
+        WHERE {{SqlColumnNames.RenewalTaskId}} = @TaskId
+          AND {{SqlColumnNames.RenewalTaskClientCompanyId}} = @ClientCompanyId
+          AND {{SqlColumnNames.RenewalTaskIsDeleted}} = false;
+
+        SELECT
+            {{SqlColumnNames.RenewalTaskHistoryId}} AS Id,
+            {{SqlColumnNames.RenewalTaskHistoryStatus}} AS Status,
+            {{SqlColumnNames.RenewalTaskHistoryChangedBy}} AS ChangedBy,
+            {{SqlColumnNames.RenewalTaskHistoryChangedAt}} AS ChangedAt,
+            {{SqlColumnNames.RenewalTaskHistoryNote}} AS Note
+        FROM renewal_task_histories
+        WHERE {{SqlColumnNames.RenewalTaskHistoryRenewalTaskId}} = @TaskId
+          AND {{SqlColumnNames.RenewalTaskHistoryIsDeleted}} = false
+        ORDER BY {{SqlColumnNames.RenewalTaskHistoryChangedAt}} ASC;
+        """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(
+                cancellationToken);
+
+        using var multi =
+            await connection.QueryMultipleAsync(
+                new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        TaskId = taskId,
+                        ClientCompanyId = clientCompanyId
+                    },
+                    cancellationToken: cancellationToken));
+
+        var taskExists =
+            await multi.ReadSingleAsync<int>();
+
+        if (taskExists == 0)
+        {
+            return null;
+        }
+
+        var historyItems =
+            (await multi.ReadAsync<RenewalTaskHistoryDto>())
+            .ToList();
 
         return new GetRenewalTaskHistoryResponseDto(
             taskId,
@@ -392,37 +546,38 @@ public sealed class RenewalTaskReadRepository
     Guid staffId,
     CancellationToken cancellationToken)
     {
-        const string staffExistsSql = """
+        var sql = $$"""
         SELECT COUNT(*)
         FROM users
         WHERE id = @StaffId
           AND role = 'Agent'
           AND is_deleted = false;
-        """;
 
-        const string statusSql = """
         SELECT
-            "Status" AS Status,
+            {{SqlColumnNames.RenewalTaskStatus}} AS Status,
             COUNT(*) AS TaskCount
         FROM renewal_tasks
-        WHERE "AssignedStaffId" = @StaffId
-          AND "IsDeleted" = false
-        GROUP BY "Status";
+        WHERE {{SqlColumnNames.RenewalTaskAssignedStaffId}} = @StaffId
+          AND {{SqlColumnNames.RenewalTaskIsDeleted}} = false
+        GROUP BY {{SqlColumnNames.RenewalTaskStatus}};
         """;
 
         await using var connection =
             await _dataSource.OpenConnectionAsync(
                 cancellationToken);
 
-        var staffExists =
-            await connection.ExecuteScalarAsync<int>(
+        using var multi =
+            await connection.QueryMultipleAsync(
                 new CommandDefinition(
-                    staffExistsSql,
+                    sql,
                     new
                     {
                         StaffId = staffId
                     },
                     cancellationToken: cancellationToken));
+
+        var staffExists =
+            await multi.ReadSingleAsync<int>();
 
         if (staffExists == 0)
         {
@@ -430,14 +585,7 @@ public sealed class RenewalTaskReadRepository
         }
 
         var rows =
-            await connection.QueryAsync<StaffWorkloadStatusRow>(
-                new CommandDefinition(
-                    statusSql,
-                    new
-                    {
-                        StaffId = staffId
-                    },
-                    cancellationToken: cancellationToken));
+            await multi.ReadAsync<StaffWorkloadStatusRow>();
 
         var counts = rows.ToDictionary(
             x => x.Status,
@@ -497,14 +645,14 @@ public sealed class RenewalTaskReadRepository
     public async Task<GetAllStaffWorkloadResponseDto> GetAllStaffWorkloadAsync(
     CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $$"""
         SELECT
             u.id AS StaffId,
 
             COALESCE(
                 SUM(
                     CASE
-                        WHEN rt."Status" IN (1, 2, 3, 5)
+                        WHEN rt.{{SqlColumnNames.RenewalTaskStatus}} IN (1, 2, 3, 5)
                         THEN 1
                         ELSE 0
                     END
@@ -515,7 +663,7 @@ public sealed class RenewalTaskReadRepository
             COALESCE(
                 SUM(
                     CASE
-                        WHEN rt."Status" = 4
+                        WHEN rt.{{SqlColumnNames.RenewalTaskStatus}} = 4
                         THEN 1
                         ELSE 0
                     END
@@ -524,34 +672,34 @@ public sealed class RenewalTaskReadRepository
             ) AS BlockedTaskCount,
 
             COUNT(
-                CASE WHEN rt."Status" = 1 THEN 1 END
+                CASE WHEN rt.{{SqlColumnNames.RenewalTaskStatus}} = 1 THEN 1 END
             ) AS Submitted,
 
             COUNT(
-                CASE WHEN rt."Status" = 2 THEN 1 END
+                CASE WHEN rt.{{SqlColumnNames.RenewalTaskStatus}} = 2 THEN 1 END
             ) AS FeePaid,
 
             COUNT(
-                CASE WHEN rt."Status" = 3 THEN 1 END
+                CASE WHEN rt.{{SqlColumnNames.RenewalTaskStatus}} = 3 THEN 1 END
             ) AS AwaitingApproval,
 
             COUNT(
-                CASE WHEN rt."Status" = 4 THEN 1 END
+                CASE WHEN rt.{{SqlColumnNames.RenewalTaskStatus}} = 4 THEN 1 END
             ) AS Blocked,
 
             COUNT(
-                CASE WHEN rt."Status" = 5 THEN 1 END
+                CASE WHEN rt.{{SqlColumnNames.RenewalTaskStatus}} = 5 THEN 1 END
             ) AS Approved,
 
             COUNT(
-                CASE WHEN rt."Status" = 6 THEN 1 END
+                CASE WHEN rt.{{SqlColumnNames.RenewalTaskStatus}} = 6 THEN 1 END
             ) AS Updated
 
         FROM users u
 
         LEFT JOIN renewal_tasks rt
-            ON rt."AssignedStaffId" = u.id
-            AND rt."IsDeleted" = false
+            ON rt.{{SqlColumnNames.RenewalTaskAssignedStaffId}} = u.id
+            AND rt.{{SqlColumnNames.RenewalTaskIsDeleted}} = false
 
         WHERE u.role = 'Agent'
           AND u.is_deleted = false
@@ -600,74 +748,27 @@ public sealed class RenewalTaskReadRepository
         Guid agentId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
     SELECT
-        rt."Id" AS Id,
-        rt."Status" AS Status,
-
-        rt."DocumentId" AS DocumentId,
-
-        d.id AS Document_Id,
-        d.type AS Document_Type,
-        d.document_number AS Document_DocumentNumber,
-        d.issue_date AS Document_IssueDate,
-        d.expiry_date AS Document_ExpiryDate,
-        d.file_name AS Document_FileName,
-
-        rt."ClientCompanyId" AS ClientCompanyId,
-
-        u.id AS Staff_Id,
-        u.full_name AS Staff_FullName,
-        u.email AS Staff_Email,
-
-        rt."BlockedReason" AS BlockedReason,
-        rt."BlockedSince" AS BlockedSince,
-        rt."CompletedAt" AS CompletedAt,
-
-        COUNT(sl."Id") AS StepLogCount,
-
-        rt."CreatedAt" AS CreatedAt,
-        rt."UpdatedAt" AS UpdatedAt
+        {TaskDetailSelect}
 
     FROM renewal_tasks rt
 
     INNER JOIN documents d
-        ON d.id = rt."DocumentId"
+        ON d.id = rt.{SqlColumnNames.RenewalTaskDocumentId}
 
     LEFT JOIN users u
-        ON u.id = rt."AssignedStaffId"
+        ON u.id = rt.{SqlColumnNames.RenewalTaskAssignedStaffId}
 
     LEFT JOIN renewal_step_logs sl
-        ON sl."RenewalTaskId" = rt."Id"
+        ON sl.{SqlColumnNames.RenewalStepLogRenewalTaskId} = rt.{SqlColumnNames.RenewalTaskId}
 
-    WHERE rt."Id" = @TaskId
-      AND rt."AssignedStaffId" = @AgentId
-      AND rt."IsDeleted" = false
+    WHERE rt.{SqlColumnNames.RenewalTaskId} = @TaskId
+      AND rt.{SqlColumnNames.RenewalTaskAssignedStaffId} = @AgentId
+      AND rt.{SqlColumnNames.RenewalTaskIsDeleted} = false
 
     GROUP BY
-        rt."Id",
-        rt."Status",
-        rt."DocumentId",
-
-        d.id,
-        d.type,
-        d.document_number,
-        d.issue_date,
-        d.expiry_date,
-        d.file_name,
-
-        rt."ClientCompanyId",
-
-        u.id,
-        u.full_name,
-        u.email,
-
-        rt."BlockedReason",
-        rt."BlockedSince",
-        rt."CompletedAt",
-
-        rt."CreatedAt",
-        rt."UpdatedAt";
+        {TaskDetailGroupBy};
     """;
 
         await using var connection =
@@ -716,6 +817,7 @@ public sealed class RenewalTaskReadRepository
             row.BlockedReason,
             row.BlockedSince,
             row.CompletedAt,
+            row.ServiceFeeAmount,
             row.StepLogCount,
             row.CreatedAt,
             row.UpdatedAt);
@@ -731,36 +833,34 @@ public sealed class RenewalTaskReadRepository
         Guid agentId,
         CancellationToken cancellationToken)
     {
-        const string taskExistsSql = """
+        var sql = $$"""
         SELECT COUNT(*)
         FROM renewal_tasks
-        WHERE "Id" = @TaskId
-          AND "AssignedStaffId" = @AgentId
-          AND "IsDeleted" = false;
-        """;
+        WHERE {{SqlColumnNames.RenewalTaskId}} = @TaskId
+          AND {{SqlColumnNames.RenewalTaskAssignedStaffId}} = @AgentId
+          AND {{SqlColumnNames.RenewalTaskIsDeleted}} = false;
 
-        const string stepsSql = """
         SELECT
-            "Id" AS Id,
-            "StepName" AS StepName,
-            "CompletedBy" AS CompletedBy,
-            "CompletedAt" AS CompletedAt,
-            "ReferenceNumber" AS ReferenceNumber,
-            "ProofFileUrl" AS ProofFileUrl
+            {{SqlColumnNames.RenewalStepLogId}} AS Id,
+            {{SqlColumnNames.RenewalStepLogStepName}} AS StepName,
+            {{SqlColumnNames.RenewalStepLogCompletedBy}} AS CompletedBy,
+            {{SqlColumnNames.RenewalStepLogCompletedAt}} AS CompletedAt,
+            {{SqlColumnNames.RenewalStepLogReferenceNumber}} AS ReferenceNumber,
+            {{SqlColumnNames.RenewalStepLogProofFileUrl}} AS ProofFileUrl
         FROM renewal_step_logs
-        WHERE "RenewalTaskId" = @TaskId
-          AND "IsDeleted" = false
-        ORDER BY "CompletedAt" ASC;
+        WHERE {{SqlColumnNames.RenewalStepLogRenewalTaskId}} = @TaskId
+          AND {{SqlColumnNames.RenewalStepLogIsDeleted}} = false
+        ORDER BY {{SqlColumnNames.RenewalStepLogCompletedAt}} ASC;
         """;
 
         await using var connection =
             await _dataSource.OpenConnectionAsync(
                 cancellationToken);
 
-        var taskExists =
-            await connection.ExecuteScalarAsync<int>(
+        using var multi =
+            await connection.QueryMultipleAsync(
                 new CommandDefinition(
-                    taskExistsSql,
+                    sql,
                     new
                     {
                         TaskId = taskId,
@@ -768,22 +868,17 @@ public sealed class RenewalTaskReadRepository
                     },
                     cancellationToken: cancellationToken));
 
+        var taskExists =
+            await multi.ReadSingleAsync<int>();
+
         if (taskExists == 0)
         {
             return null;
         }
 
-        var items =
-            await connection.QueryAsync<RenewalStepLogDto>(
-                new CommandDefinition(
-                    stepsSql,
-                    new
-                    {
-                        TaskId = taskId
-                    },
-                    cancellationToken: cancellationToken));
-
-        var stepItems = items.ToList();
+        var stepItems =
+            (await multi.ReadAsync<RenewalStepLogDto>())
+            .ToList();
 
         return new GetRenewalTaskStepsResponseDto(
             taskId,
@@ -801,35 +896,33 @@ public sealed class RenewalTaskReadRepository
         Guid agentId,
         CancellationToken cancellationToken)
     {
-        const string taskExistsSql = """
+        var sql = $$"""
         SELECT COUNT(*)
         FROM renewal_tasks
-        WHERE "Id" = @TaskId
-          AND "AssignedStaffId" = @AgentId
-          AND "IsDeleted" = false;
-        """;
+        WHERE {{SqlColumnNames.RenewalTaskId}} = @TaskId
+          AND {{SqlColumnNames.RenewalTaskAssignedStaffId}} = @AgentId
+          AND {{SqlColumnNames.RenewalTaskIsDeleted}} = false;
 
-        const string historySql = """
         SELECT
-            "Id" AS Id,
-            "Status" AS Status,
-            "ChangedBy" AS ChangedBy,
-            "ChangedAt" AS ChangedAt,
-            "Note" AS Note
+            {{SqlColumnNames.RenewalTaskHistoryId}} AS Id,
+            {{SqlColumnNames.RenewalTaskHistoryStatus}} AS Status,
+            {{SqlColumnNames.RenewalTaskHistoryChangedBy}} AS ChangedBy,
+            {{SqlColumnNames.RenewalTaskHistoryChangedAt}} AS ChangedAt,
+            {{SqlColumnNames.RenewalTaskHistoryNote}} AS Note
         FROM renewal_task_histories
-        WHERE "RenewalTaskId" = @TaskId
-          AND "IsDeleted" = false
-        ORDER BY "ChangedAt" ASC;
+        WHERE {{SqlColumnNames.RenewalTaskHistoryRenewalTaskId}} = @TaskId
+          AND {{SqlColumnNames.RenewalTaskHistoryIsDeleted}} = false
+        ORDER BY {{SqlColumnNames.RenewalTaskHistoryChangedAt}} ASC;
         """;
 
         await using var connection =
             await _dataSource.OpenConnectionAsync(
                 cancellationToken);
 
-        var taskExists =
-            await connection.ExecuteScalarAsync<int>(
+        using var multi =
+            await connection.QueryMultipleAsync(
                 new CommandDefinition(
-                    taskExistsSql,
+                    sql,
                     new
                     {
                         TaskId = taskId,
@@ -837,22 +930,17 @@ public sealed class RenewalTaskReadRepository
                     },
                     cancellationToken: cancellationToken));
 
+        var taskExists =
+            await multi.ReadSingleAsync<int>();
+
         if (taskExists == 0)
         {
             return null;
         }
 
-        var items =
-            await connection.QueryAsync<RenewalTaskHistoryDto>(
-                new CommandDefinition(
-                    historySql,
-                    new
-                    {
-                        TaskId = taskId
-                    },
-                    cancellationToken: cancellationToken));
-
-        var historyItems = items.ToList();
+        var historyItems =
+            (await multi.ReadAsync<RenewalTaskHistoryDto>())
+            .ToList();
 
         return new GetRenewalTaskHistoryResponseDto(
             taskId,
@@ -870,25 +958,25 @@ public sealed class RenewalTaskReadRepository
         Guid agentId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $$"""
         SELECT
-            si."Id" AS Id,
-            si."InvoiceNumber" AS InvoiceNumber,
-            si."InvoiceDate" AS InvoiceDate,
-            si."DueDate" AS DueDate,
-            si."Amount" AS Amount,
-            si."Currency" AS Currency,
-            si."Status" AS Status,
-            si."Description" AS Description,
-            si."PaidAt" AS PaidAt,
-            si."CreatedAt" AS CreatedAt
+            si.{{SqlColumnNames.ServiceFeeInvoiceId}} AS Id,
+            si.{{SqlColumnNames.ServiceFeeInvoiceInvoiceNumber}} AS InvoiceNumber,
+            si.{{SqlColumnNames.ServiceFeeInvoiceInvoiceDate}} AS InvoiceDate,
+            si.{{SqlColumnNames.ServiceFeeInvoiceDueDate}} AS DueDate,
+            si.{{SqlColumnNames.ServiceFeeInvoiceAmount}} AS Amount,
+            si.{{SqlColumnNames.ServiceFeeInvoiceCurrency}} AS Currency,
+            si.{{SqlColumnNames.ServiceFeeInvoiceStatus}} AS Status,
+            si.{{SqlColumnNames.ServiceFeeInvoiceDescription}} AS Description,
+            si.{{SqlColumnNames.ServiceFeeInvoicePaidAt}} AS PaidAt,
+            si.{{SqlColumnNames.ServiceFeeInvoiceCreatedAt}} AS CreatedAt
         FROM service_fee_invoices si
         INNER JOIN renewal_tasks rt
-            ON rt."Id" = si."RenewalTaskId"
-        WHERE si."RenewalTaskId" = @TaskId
-          AND rt."AssignedStaffId" = @AgentId
-          AND si."IsDeleted" = false
-          AND rt."IsDeleted" = false;
+            ON rt.{{SqlColumnNames.RenewalTaskId}} = si.{{SqlColumnNames.ServiceFeeInvoiceRenewalTaskId}}
+        WHERE si.{{SqlColumnNames.ServiceFeeInvoiceRenewalTaskId}} = @TaskId
+          AND rt.{{SqlColumnNames.RenewalTaskAssignedStaffId}} = @AgentId
+          AND si.{{SqlColumnNames.ServiceFeeInvoiceIsDeleted}} = false
+          AND rt.{{SqlColumnNames.RenewalTaskIsDeleted}} = false;
         """;
 
         await using var connection =
@@ -923,8 +1011,7 @@ public sealed class RenewalTaskReadRepository
 
         var whereConditions = new List<string>
         {
-            "rt.\"AssignedStaffId\" = @AgentId",
-            "rt.\"IsDeleted\" = false",
+            SqlSnippets.AgentTaskScope,
             "cc.is_deleted = false"
         };
 
@@ -946,7 +1033,7 @@ public sealed class RenewalTaskReadRepository
             SELECT COUNT(DISTINCT cc.id)
             FROM client_companies cc
             INNER JOIN renewal_tasks rt
-                ON rt."ClientCompanyId" = cc.id
+                ON rt.{SqlColumnNames.RenewalTaskClientCompanyId} = cc.id
             {whereClause};
             """;
 
@@ -963,11 +1050,10 @@ public sealed class RenewalTaskReadRepository
                 cc.created_at AS CreatedAt
             FROM client_companies cc
             INNER JOIN renewal_tasks rt
-                ON rt."ClientCompanyId" = cc.id
+                ON rt.{SqlColumnNames.RenewalTaskClientCompanyId} = cc.id
             {whereClause}
             ORDER BY cc.created_at DESC
-            OFFSET @Offset
-            LIMIT @PageSize;
+            {SqlSnippets.Pagination};
             """;
 
         parameters.Add("Offset", offset);
@@ -1004,7 +1090,7 @@ public sealed class RenewalTaskReadRepository
         Guid companyId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
         SELECT
             cc.id AS Id,
             cc.company_name AS CompanyName,
@@ -1019,10 +1105,9 @@ public sealed class RenewalTaskReadRepository
             cc.updated_at AS UpdatedAt
         FROM client_companies cc
         INNER JOIN renewal_tasks rt
-            ON rt."ClientCompanyId" = cc.id
+            ON rt.{SqlColumnNames.RenewalTaskClientCompanyId} = cc.id
         WHERE cc.id = @CompanyId
-          AND rt."AssignedStaffId" = @AgentId
-          AND rt."IsDeleted" = false
+          AND {SqlSnippets.AgentTaskScope}
           AND cc.is_deleted = false
         LIMIT 1;
         """;
@@ -1059,9 +1144,8 @@ public sealed class RenewalTaskReadRepository
 
         var whereConditions = new List<string>
         {
-            "rt.\"AssignedStaffId\" = @AgentId",
-            "rt.\"ClientCompanyId\" = @CompanyId",
-            "rt.\"IsDeleted\" = false",
+            SqlSnippets.AgentTaskScope,
+            $"rt.{SqlColumnNames.RenewalTaskClientCompanyId} = @CompanyId",
             "ce.is_deleted = false",
             "(d.client_entity_id = ce.id OR emp.client_entity_id = ce.id)"
         };
@@ -1085,9 +1169,9 @@ public sealed class RenewalTaskReadRepository
             SELECT COUNT(DISTINCT ce.id)
             FROM client_entities ce
             INNER JOIN renewal_tasks rt
-                ON rt."ClientCompanyId" = ce.client_company_id
+                ON rt.{SqlColumnNames.RenewalTaskClientCompanyId} = ce.client_company_id
             INNER JOIN documents d
-                ON d.id = rt."DocumentId"
+                ON d.id = rt.{SqlColumnNames.RenewalTaskDocumentId}
             LEFT JOIN employees emp
                 ON emp.id = d.employee_id
             {whereClause};
@@ -1105,15 +1189,14 @@ public sealed class RenewalTaskReadRepository
                 ce.created_at AS CreatedAt
             FROM client_entities ce
             INNER JOIN renewal_tasks rt
-                ON rt."ClientCompanyId" = ce.client_company_id
+                ON rt.{SqlColumnNames.RenewalTaskClientCompanyId} = ce.client_company_id
             INNER JOIN documents d
-                ON d.id = rt."DocumentId"
+                ON d.id = rt.{SqlColumnNames.RenewalTaskDocumentId}
             LEFT JOIN employees emp
                 ON emp.id = d.employee_id
             {whereClause}
             ORDER BY ce.created_at DESC
-            OFFSET @Offset
-            LIMIT @PageSize;
+            {SqlSnippets.Pagination};
             """;
 
         parameters.Add("Offset", offset);
@@ -1156,7 +1239,7 @@ public sealed class RenewalTaskReadRepository
         var parameters = new DynamicParameters();
         parameters.Add("AgentId", agentId);
 
-        const string countSql = """
+        var countSql = $$"""
             SELECT COUNT(DISTINCT e.id)
             FROM employees e
             INNER JOIN client_entities ce
@@ -1164,14 +1247,13 @@ public sealed class RenewalTaskReadRepository
             INNER JOIN documents d
                 ON d.employee_id = e.id
             INNER JOIN renewal_tasks rt
-                ON rt."DocumentId" = d.id
-            WHERE rt."AssignedStaffId" = @AgentId
-              AND rt."IsDeleted" = false
+                ON rt.{{SqlColumnNames.RenewalTaskDocumentId}} = d.id
+            WHERE {{SqlSnippets.AgentTaskScope}}
               AND e.is_deleted = false
               AND ce.is_deleted = false;
             """;
 
-        const string dataSql = """
+        var dataSql = $$"""
             SELECT DISTINCT
                 e.id AS Id,
                 e.client_entity_id AS ClientEntityId,
@@ -1190,14 +1272,12 @@ public sealed class RenewalTaskReadRepository
             INNER JOIN documents d
                 ON d.employee_id = e.id
             INNER JOIN renewal_tasks rt
-                ON rt."DocumentId" = d.id
-            WHERE rt."AssignedStaffId" = @AgentId
-              AND rt."IsDeleted" = false
+                ON rt.{{SqlColumnNames.RenewalTaskDocumentId}} = d.id
+            WHERE {{SqlSnippets.AgentTaskScope}}
               AND e.is_deleted = false
               AND ce.is_deleted = false
             ORDER BY e.created_at DESC
-            OFFSET @Offset
-            LIMIT @PageSize;
+            {{SqlSnippets.Pagination}};
             """;
 
         parameters.Add("Offset", offset);
@@ -1234,7 +1314,7 @@ public sealed class RenewalTaskReadRepository
         Guid employeeId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
         SELECT
             e.id AS Id,
             e.client_entity_id AS ClientEntityId,
@@ -1256,10 +1336,9 @@ public sealed class RenewalTaskReadRepository
         INNER JOIN documents d
             ON d.employee_id = e.id
         INNER JOIN renewal_tasks rt
-            ON rt."DocumentId" = d.id
+            ON rt.{SqlColumnNames.RenewalTaskDocumentId} = d.id
         WHERE e.id = @EmployeeId
-          AND rt."AssignedStaffId" = @AgentId
-          AND rt."IsDeleted" = false
+          AND {SqlSnippets.AgentTaskScope}
           AND e.is_deleted = false
         LIMIT 1;
         """;
@@ -1293,18 +1372,17 @@ public sealed class RenewalTaskReadRepository
         parameters.Add("AgentId", agentId);
         parameters.Add("EmployeeId", employeeId);
 
-        const string countSql = """
+        var countSql = $$"""
             SELECT COUNT(DISTINCT d.id)
             FROM documents d
             INNER JOIN renewal_tasks rt
-                ON rt."DocumentId" = d.id
+                ON rt.{{SqlColumnNames.RenewalTaskDocumentId}} = d.id
             WHERE d.employee_id = @EmployeeId
-              AND rt."AssignedStaffId" = @AgentId
-              AND rt."IsDeleted" = false
+              AND {{SqlSnippets.AgentTaskScope}}
               AND d.is_deleted = false;
             """;
 
-        const string dataSql = """
+        var dataSql = $$"""
             SELECT DISTINCT
                 d.id AS Id,
                 d.employee_id AS EmployeeId,
@@ -1320,19 +1398,12 @@ public sealed class RenewalTaskReadRepository
                 d.is_deleted AS IsDeleted,
                 d.created_at AS CreatedAt,
                 d.updated_at AS UpdatedAt,
-                CASE
-                    WHEN d.expiry_date IS NULL THEN 1
-                    WHEN d.expiry_date < CURRENT_TIMESTAMP THEN 3
-                    WHEN d.expiry_date <= CURRENT_TIMESTAMP
-                        + INTERVAL '30 days' THEN 2
-                    ELSE 1
-                END AS Status
+                {{SqlSnippets.DocumentStatusNumericCase("d.expiry_date")}}
             FROM documents d
             INNER JOIN renewal_tasks rt
-                ON rt."DocumentId" = d.id
+                ON rt.{{SqlColumnNames.RenewalTaskDocumentId}} = d.id
             WHERE d.employee_id = @EmployeeId
-              AND rt."AssignedStaffId" = @AgentId
-              AND rt."IsDeleted" = false
+              AND {{SqlSnippets.AgentTaskScope}}
               AND d.is_deleted = false
             ORDER BY d.created_at DESC;
             """;
@@ -1371,17 +1442,12 @@ public sealed class RenewalTaskReadRepository
         // Strict task-linked scope. A document is in the agent's scope
         // only when it is the DocumentId of a non-deleted renewal task
         // assigned to the authenticated agent. No company-rooted access.
-        const string sql = """
+        var sql = $"""
             SELECT COUNT(*)
             FROM documents d
             WHERE d.id = @DocumentId
               AND d.is_deleted = false
-              AND EXISTS (
-                  SELECT 1 FROM renewal_tasks rt
-                  WHERE rt."DocumentId" = d.id
-                    AND rt."AssignedStaffId" = @AgentId
-                    AND rt."IsDeleted" = false
-              );
+              AND {SqlSnippets.DocumentScopeExists};
             """;
 
         await using var connection =
@@ -1406,16 +1472,15 @@ public sealed class RenewalTaskReadRepository
         Guid employeeId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             SELECT COUNT(*)
             FROM employees e
             INNER JOIN documents d
                 ON d.employee_id = e.id
             INNER JOIN renewal_tasks rt
-                ON rt."DocumentId" = d.id
+                ON rt.{SqlColumnNames.RenewalTaskDocumentId} = d.id
             WHERE e.id = @EmployeeId
-              AND rt."AssignedStaffId" = @AgentId
-              AND rt."IsDeleted" = false
+              AND {SqlSnippets.AgentTaskScope}
               AND e.is_deleted = false;
             """;
 
@@ -1441,18 +1506,17 @@ public sealed class RenewalTaskReadRepository
         Guid entityId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             SELECT COUNT(*)
             FROM client_entities ce
             INNER JOIN renewal_tasks rt
-                ON rt."ClientCompanyId" = ce.client_company_id
+                ON rt.{SqlColumnNames.RenewalTaskClientCompanyId} = ce.client_company_id
             INNER JOIN documents d
-                ON d.id = rt."DocumentId"
+                ON d.id = rt.{SqlColumnNames.RenewalTaskDocumentId}
             LEFT JOIN employees emp
                 ON emp.id = d.employee_id
             WHERE ce.id = @EntityId
-              AND rt."AssignedStaffId" = @AgentId
-              AND rt."IsDeleted" = false
+              AND {SqlSnippets.AgentTaskScope}
               AND ce.is_deleted = false
               AND (d.client_entity_id = ce.id OR emp.client_entity_id = ce.id);
             """;
@@ -1474,38 +1538,96 @@ public sealed class RenewalTaskReadRepository
     }
 
 
-    public async Task<HashSet<Guid>> GetAgentScopedDocumentIdsAsync(
+    public async Task<bool> IsAgentClientInScopeAsync(
         Guid agentId,
+        Guid companyId,
         CancellationToken cancellationToken)
     {
-        // Strict task-linked scope: a document is in scope only when it is
-        // the DocumentId of a non-deleted renewal task assigned to the
-        // authenticated agent. No company-rooted access.
-        const string sql = """
-            SELECT DISTINCT d.id
-            FROM documents d
-            WHERE d.is_deleted = false
-              AND EXISTS (
-                  SELECT 1 FROM renewal_tasks rt
-                  WHERE rt."DocumentId" = d.id
-                    AND rt."AssignedStaffId" = @AgentId
-                    AND rt."IsDeleted" = false
-              );
+        // Strict task-linked scope. A client company is in the agent's scope
+        // only when it is linked (via its entities/employees/documents) to a
+        // non-deleted renewal task assigned to the authenticated agent.
+        var sql = $"""
+            SELECT COUNT(*)
+            FROM client_companies cc
+            INNER JOIN client_entities ce
+                ON ce.client_company_id = cc.id
+            INNER JOIN renewal_tasks rt
+                ON rt.{SqlColumnNames.RenewalTaskClientCompanyId} = cc.id
+            INNER JOIN documents d
+                ON d.id = rt.{SqlColumnNames.RenewalTaskDocumentId}
+            LEFT JOIN employees emp
+                ON emp.id = d.employee_id
+            WHERE cc.id = @CompanyId
+              AND {SqlSnippets.AgentTaskScope}
+              AND cc.is_deleted = false
+              AND (d.client_entity_id = ce.id OR emp.client_entity_id = ce.id);
             """;
 
         await using var connection =
             await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        var ids = await connection.QueryAsync<Guid>(
+        var count = await connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
                 sql,
                 new
                 {
-                    AgentId = agentId
+                    AgentId = agentId,
+                    CompanyId = companyId
                 },
                 cancellationToken: cancellationToken));
 
-        return ids.ToHashSet();
+        return count > 0;
+    }
+
+
+    public async Task<GetDocumentDependenciesResponseDto>
+        GetAgentDocumentDependenciesAsync(
+            Guid agentId,
+            Guid documentId,
+            CancellationToken cancellationToken)
+    {
+        // The scope predicate runs in SQL as an EXISTS subquery over the
+        // documents (alias d) so no in-memory scoped-ID set is materialized.
+        // Results are the non-deleted dependencies whose DependsOnDocumentId
+        // is itself a non-deleted, task-linked, agent-scoped document.
+        var sql = $"""
+            SELECT
+                dd.id AS Id,
+                dd.depends_on_document_id AS DependsOnDocumentId,
+                d.type AS DocumentType,
+                d.document_number AS DocumentNumber,
+                d.expiry_date AS ExpiryDate,
+                d.is_active AS IsActive,
+                d.is_deleted AS IsDeleted
+            FROM document_dependencies dd
+            INNER JOIN documents d
+                ON d.id = dd.depends_on_document_id
+            WHERE dd.document_id = @DocumentId
+              AND dd.is_deleted = false
+              AND d.is_deleted = false
+              AND {SqlSnippets.DocumentScopeExists}
+            ORDER BY dd.created_at DESC;
+            """;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var items = await connection.QueryAsync<DocumentDependencyItemDto>(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    AgentId = agentId,
+                    DocumentId = documentId
+                },
+                cancellationToken: cancellationToken));
+
+        var list = items.ToList();
+
+        return new GetDocumentDependenciesResponseDto(
+            documentId,
+            list,
+            list.Count);
     }
 
 
@@ -1529,10 +1651,7 @@ public sealed class RenewalTaskReadRepository
             // Strict task-linked scope predicate. A document is in scope
             // only when it is the DocumentId of a non-deleted renewal task
             // assigned to the authenticated agent. No company-rooted access.
-            "EXISTS (SELECT 1 FROM renewal_tasks rt " +
-            "WHERE rt.\"DocumentId\" = d.id " +
-            "AND rt.\"AssignedStaffId\" = @AgentId " +
-            "AND rt.\"IsDeleted\" = false)",
+            SqlSnippets.DocumentScopeExists,
             "d.is_deleted = false"
         };
 
@@ -1550,16 +1669,20 @@ public sealed class RenewalTaskReadRepository
             switch (status.Value)
             {
                 case DocumentStatus.Active:
+                    // Wrapped as a single atom for the same reason as the client
+                    // document scope: without the outer parentheses the "> 90
+                    // days" branch would escape DocumentScopeExists and the
+                    // soft-delete filter through SQL OR precedence.
                     whereConditions.Add(
-                        "d.expiry_date IS NULL OR " +
-                        "(d.expiry_date > CURRENT_TIMESTAMP + INTERVAL '30 days')");
+                        "(d.expiry_date IS NULL OR " +
+                        $"{SqlSnippets.BeyondWindowClause("d.expiry_date", 90)})");
                     break;
 
                 case DocumentStatus.ExpiringSoon:
                     whereConditions.Add(
                         "d.expiry_date IS NOT NULL AND " +
                         "d.expiry_date > CURRENT_TIMESTAMP AND " +
-                        "d.expiry_date <= CURRENT_TIMESTAMP + INTERVAL '30 days'");
+                        SqlSnippets.ExpiryWindowClause("d.expiry_date", 90));
                     break;
 
                 case DocumentStatus.Overdue:
@@ -1571,9 +1694,9 @@ public sealed class RenewalTaskReadRepository
                 case DocumentStatus.InRenewal:
                     whereConditions.Add(
                         "EXISTS (SELECT 1 FROM renewal_tasks rt3 " +
-                        "WHERE rt3.\"DocumentId\" = d.id " +
-                        "AND rt3.\"Status\" IN (1, 2, 3, 5) " +
-                        "AND rt3.\"IsDeleted\" = false)");
+                        $"WHERE rt3.{SqlColumnNames.RenewalTaskDocumentId} = d.id " +
+                        $"AND rt3.{SqlColumnNames.RenewalTaskStatus} IN (1, 2, 3, 5) " +
+                        $"AND rt3.{SqlColumnNames.RenewalTaskIsDeleted} = false)");
                     break;
             }
         }
@@ -1611,18 +1734,11 @@ public sealed class RenewalTaskReadRepository
                 d.is_deleted AS IsDeleted,
                 d.created_at AS CreatedAt,
                 d.updated_at AS UpdatedAt,
-                CASE
-                    WHEN d.expiry_date IS NULL THEN 1
-                    WHEN d.expiry_date < CURRENT_TIMESTAMP THEN 3
-                    WHEN d.expiry_date <= CURRENT_TIMESTAMP
-                        + INTERVAL '30 days' THEN 2
-                    ELSE 1
-                END AS Status
+                {SqlSnippets.DocumentStatusNumericCase("d.expiry_date")}
             FROM documents d
             {whereClause}
             ORDER BY d.created_at DESC
-            OFFSET @Offset
-            LIMIT @PageSize;
+            {SqlSnippets.Pagination};
             """;
 
         parameters.Add("Offset", offset);
@@ -1669,29 +1785,17 @@ public sealed class RenewalTaskReadRepository
             // Strict task-linked scope predicate. A document is in scope
             // only when it is the DocumentId of a non-deleted renewal task
             // assigned to the authenticated agent. No company-rooted access.
-            "EXISTS (SELECT 1 FROM renewal_tasks rt " +
-            "WHERE rt.\"DocumentId\" = d.id " +
-            "AND rt.\"AssignedStaffId\" = @AgentId " +
-            "AND rt.\"IsDeleted\" = false)",
+            SqlSnippets.DocumentScopeExists,
             "d.is_deleted = false"
         };
 
         var parameters = new DynamicParameters();
         parameters.Add("AgentId", agentId);
 
-        if (includeExpired)
-        {
-            whereConditions.Add(
-                "d.expiry_date <= CURRENT_TIMESTAMP + " +
-                "(INTERVAL '1 day' * @Days)");
-        }
-        else
-        {
-            whereConditions.Add(
-                "d.expiry_date > CURRENT_TIMESTAMP AND " +
-                "d.expiry_date <= CURRENT_TIMESTAMP + " +
-                "(INTERVAL '1 day' * @Days)");
-        }
+        whereConditions.Add(
+            SqlSnippets.ExpiryWindowCondition(
+                "d.expiry_date",
+                includeExpired));
 
         parameters.Add("Days", days);
 
@@ -1716,22 +1820,12 @@ public sealed class RenewalTaskReadRepository
                 d.file_name AS FileName,
                 d.is_active AS IsActive,
                 d.is_deleted AS IsDeleted,
-                GREATEST(
-                    0,
-                    (d.expiry_date::date - CURRENT_DATE::date)
-                ) AS DaysRemaining,
-                CASE
-                    WHEN d.expiry_date IS NULL THEN 'Active'
-                    WHEN d.expiry_date < CURRENT_TIMESTAMP THEN 'Overdue'
-                    WHEN d.expiry_date <= CURRENT_TIMESTAMP
-                        + INTERVAL '30 days' THEN 'ExpiringSoon'
-                    ELSE 'Active'
-                END AS Status
+                {SqlSnippets.DaysRemaining("d.expiry_date")},
+                {SqlSnippets.ExpiryStatusLabelCase("d.expiry_date", 90)}
             FROM documents d
             {whereClause}
             ORDER BY d.expiry_date ASC
-            OFFSET @Offset
-            LIMIT @PageSize;
+            {SqlSnippets.Pagination};
             """;
 
         parameters.Add("Offset", offset);
@@ -1798,6 +1892,8 @@ internal sealed class RenewalTaskDetailReadModel
     public DateTime? BlockedSince { get; set; }
 
     public DateTime? CompletedAt { get; set; }
+
+    public decimal? ServiceFeeAmount { get; set; }
 
     public int StepLogCount { get; set; }
 

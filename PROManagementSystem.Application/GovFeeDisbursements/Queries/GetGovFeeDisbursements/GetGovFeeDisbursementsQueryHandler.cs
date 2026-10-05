@@ -23,7 +23,7 @@ public sealed class GetGovFeeDisbursementsQueryHandler
         var result =
             await _readRepository.GetListAsync(
                 request.ClientCompanyId,
-                request.Status?.ToString(),
+                request.Status,
                 request.Page,
                 request.PageSize,
                 cancellationToken);

@@ -3,6 +3,8 @@ using Npgsql;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.GovFeeDisbursements.Queries.GetGovFeeDisbursements;
 using PROManagementSystem.Application.GovFeeDisbursements.Queries.GetGovFeeDisbursementById;
+using PROManagementSystem.Domain.Enums;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -19,7 +21,7 @@ public sealed class GovFeeDisbursementReadRepository
 
     public async Task<GetGovFeeDisbursementsResponseDto?> GetListAsync(
         Guid? clientCompanyId,
-        string? status,
+        GovFeeDisbursementStatus? status,
         int page,
         int pageSize,
         CancellationToken cancellationToken)
@@ -27,22 +29,23 @@ public sealed class GovFeeDisbursementReadRepository
         var parameters = new DynamicParameters();
         var conditions = new List<string>
         {
-            "g.\"IsDeleted\" = false"
+            "g." + SqlColumnNames.GovFeeDisbursementIsDeleted + " = false"
         };
 
         if (clientCompanyId.HasValue)
         {
             conditions.Add(
-                "g.\"ClientCompanyId\" = @ClientCompanyId");
+                "g." + SqlColumnNames.GovFeeDisbursementClientCompanyId + " = @ClientCompanyId");
             parameters.Add(
                 "ClientCompanyId",
                 clientCompanyId.Value);
         }
 
-        if (!string.IsNullOrEmpty(status))
+        if (status.HasValue)
         {
-            conditions.Add("g.\"Status\" = @Status");
-            parameters.Add("Status", status);
+            conditions.Add(
+                "g." + SqlColumnNames.GovFeeDisbursementStatus + " = @Status");
+            parameters.Add("Status", (int)status.Value);
         }
 
         var whereClause =
@@ -74,28 +77,27 @@ public sealed class GovFeeDisbursementReadRepository
         var sql =
             $"""
             SELECT
-                g."Id" AS Id,
-                g."ClientCompanyId" AS ClientCompanyId,
+                g.{SqlColumnNames.GovFeeDisbursementId} AS Id,
+                g.{SqlColumnNames.GovFeeDisbursementClientCompanyId} AS ClientCompanyId,
                 cc.company_name AS ClientCompanyName,
-                g."RenewalTaskId" AS RenewalTaskId,
-                g."FeeDescription" AS FeeDescription,
-                g."GovernmentReference" AS GovernmentReference,
-                g."Amount" AS Amount,
-                g."Currency" AS Currency,
-                g."Status" AS Status,
-                g."PaidByFirmAt" AS PaidByFirmAt,
-                g."InvoicedAt" AS InvoicedAt,
-                g."ReimbursedAt" AS ReimbursedAt,
-                g."Notes" AS Notes,
-                g."CreatedAt" AS CreatedAt,
-                g."UpdatedAt" AS UpdatedAt
+                g.{SqlColumnNames.GovFeeDisbursementRenewalTaskId} AS RenewalTaskId,
+                g.{SqlColumnNames.GovFeeDisbursementFeeDescription} AS FeeDescription,
+                g.{SqlColumnNames.GovFeeDisbursementGovernmentReference} AS GovernmentReference,
+                g.{SqlColumnNames.GovFeeDisbursementAmount} AS Amount,
+                g.{SqlColumnNames.GovFeeDisbursementCurrency} AS Currency,
+                g.{SqlColumnNames.GovFeeDisbursementStatus} AS Status,
+                g.{SqlColumnNames.GovFeeDisbursementPaidByFirmAt} AS PaidByFirmAt,
+                g.{SqlColumnNames.GovFeeDisbursementInvoicedAt} AS InvoicedAt,
+                g.{SqlColumnNames.GovFeeDisbursementReimbursedAt} AS ReimbursedAt,
+                g.{SqlColumnNames.GovFeeDisbursementNotes} AS Notes,
+                g.{SqlColumnNames.GovFeeDisbursementCreatedAt} AS CreatedAt,
+                g.{SqlColumnNames.GovFeeDisbursementUpdatedAt} AS UpdatedAt
             FROM gov_fee_disbursements g
             INNER JOIN client_companies cc
-                ON cc.id = g."ClientCompanyId"
+                ON cc.id = g.{SqlColumnNames.GovFeeDisbursementClientCompanyId}
             WHERE {whereClause}
-            ORDER BY g."CreatedAt" DESC
-            OFFSET @Offset ROWS
-            FETCH NEXT @PageSize ROWS ONLY;
+            ORDER BY g.{SqlColumnNames.GovFeeDisbursementCreatedAt} DESC
+            {SqlSnippets.Pagination};
             """;
 
         var items =
@@ -116,30 +118,49 @@ public sealed class GovFeeDisbursementReadRepository
 
     public async Task<GetGovFeeDisbursementByIdResponseDto?> GetByIdAsync(
         Guid id,
+        Guid? clientCompanyId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var parameters = new DynamicParameters();
+        parameters.Add("Id", id);
+
+        var conditions = new List<string>
+        {
+            "g." + SqlColumnNames.GovFeeDisbursementId + " = @Id",
+            "g." + SqlColumnNames.GovFeeDisbursementIsDeleted + " = false"
+        };
+
+        if (clientCompanyId.HasValue)
+        {
+            conditions.Add(
+                "g." + SqlColumnNames.GovFeeDisbursementClientCompanyId + " = @ClientCompanyId");
+            parameters.Add("ClientCompanyId", clientCompanyId.Value);
+        }
+
+        var whereClause =
+            string.Join(" AND ", conditions);
+
+        var sql = $"""
             SELECT
-                g."Id" AS Id,
-                g."ClientCompanyId" AS ClientCompanyId,
+                g.{SqlColumnNames.GovFeeDisbursementId} AS Id,
+                g.{SqlColumnNames.GovFeeDisbursementClientCompanyId} AS ClientCompanyId,
                 cc.company_name AS ClientCompanyName,
-                g."RenewalTaskId" AS RenewalTaskId,
-                g."FeeDescription" AS FeeDescription,
-                g."GovernmentReference" AS GovernmentReference,
-                g."Amount" AS Amount,
-                g."Currency" AS Currency,
-                g."Status" AS Status,
-                g."PaidByFirmAt" AS PaidByFirmAt,
-                g."InvoicedAt" AS InvoicedAt,
-                g."ReimbursedAt" AS ReimbursedAt,
-                g."Notes" AS Notes,
-                g."CreatedAt" AS CreatedAt,
-                g."UpdatedAt" AS UpdatedAt
+                g.{SqlColumnNames.GovFeeDisbursementRenewalTaskId} AS RenewalTaskId,
+                g.{SqlColumnNames.GovFeeDisbursementFeeDescription} AS FeeDescription,
+                g.{SqlColumnNames.GovFeeDisbursementGovernmentReference} AS GovernmentReference,
+                g.{SqlColumnNames.GovFeeDisbursementAmount} AS Amount,
+                g.{SqlColumnNames.GovFeeDisbursementCurrency} AS Currency,
+                g.{SqlColumnNames.GovFeeDisbursementStatus} AS Status,
+                g.{SqlColumnNames.GovFeeDisbursementPaidByFirmAt} AS PaidByFirmAt,
+                g.{SqlColumnNames.GovFeeDisbursementInvoicedAt} AS InvoicedAt,
+                g.{SqlColumnNames.GovFeeDisbursementReimbursedAt} AS ReimbursedAt,
+                g.{SqlColumnNames.GovFeeDisbursementNotes} AS Notes,
+                g.{SqlColumnNames.GovFeeDisbursementCreatedAt} AS CreatedAt,
+                g.{SqlColumnNames.GovFeeDisbursementUpdatedAt} AS UpdatedAt
             FROM gov_fee_disbursements g
             INNER JOIN client_companies cc
-                ON cc.id = g."ClientCompanyId"
-            WHERE g."Id" = @Id
-              AND g."IsDeleted" = false;
+                ON cc.id = g.{SqlColumnNames.GovFeeDisbursementClientCompanyId}
+            WHERE {whereClause};
             """;
 
         await using var connection =
@@ -150,7 +171,7 @@ public sealed class GovFeeDisbursementReadRepository
             GetGovFeeDisbursementByIdResponseDto>(
             new CommandDefinition(
                 sql,
-                new { Id = id },
+                parameters,
                 cancellationToken:
                     cancellationToken));
     }

@@ -16,5 +16,6 @@ public interface IRetainerInvoiceReadRepository
 
     Task<GetRetainerInvoiceByIdResponseDto?> GetByIdAsync(
         Guid id,
+        Guid? clientCompanyId,
         CancellationToken cancellationToken);
 }

@@ -14,5 +14,6 @@ public sealed record CreateEmployeeDocumentResponseDto(
     string? ContentType,
     long? FileSize,
     bool IsActive,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    object Details
 );

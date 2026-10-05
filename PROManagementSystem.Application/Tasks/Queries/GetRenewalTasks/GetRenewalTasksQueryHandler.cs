@@ -24,6 +24,8 @@ public sealed class GetRenewalTasksQueryHandler
             request.Status,
             request.AssignedStaffId,
             request.ClientCompanyId,
+            request.Page,
+            request.PageSize,
             cancellationToken);
     }
 }

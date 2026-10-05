@@ -3,6 +3,7 @@ using Npgsql;
 using PROManagementSystem.Application.Clients.Queries.GetClientEntities;
 using PROManagementSystem.Application.Clients.Queries.GetClientEntityById;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -79,9 +80,8 @@ public sealed class ClientEntityReadRepository
                 created_at AS CreatedAt
             FROM client_entities
             {whereClause}
-            ORDER BY created_at DESC
-            OFFSET @Offset
-            LIMIT @PageSize;
+            ORDER BY created_at DESC, id ASC
+            {SqlSnippets.Pagination};
             """;
 
         parameters.Add("Offset", offset);

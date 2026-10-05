@@ -12,7 +12,10 @@ public sealed record GetServiceRequestsResponseDto(
 public sealed record ServiceRequestListItemDto(
     Guid Id,
     Guid ClientCompanyId,
-    Guid DocumentId,
+    ServiceRequestType Type,
+    Guid? EmployeeId,
+    Guid? EntityId,
+    Guid? DocumentId,
     ServiceRequestStatus Status,
     string? Description,
     string? RejectionReason,

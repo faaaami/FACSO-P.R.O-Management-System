@@ -1,12 +1,19 @@
 ﻿using FluentValidation;
+using PROManagementSystem.Application.Common.Helpers;
+using PROManagementSystem.Application.Common.Validation;
 
 namespace PROManagementSystem.Application.Clients.Commands.CreateClientEntityDocument;
 
 public sealed class CreateClientEntityDocumentCommandValidator
     : AbstractValidator<CreateClientEntityDocumentCommand>
 {
-    public CreateClientEntityDocumentCommandValidator()
+    private readonly DocumentDetailsValidator _detailsValidator;
+
+    public CreateClientEntityDocumentCommandValidator(
+        DocumentDetailsValidator detailsValidator)
     {
+        _detailsValidator = detailsValidator;
+
         RuleFor(x => x.ClientEntityId)
             .NotEmpty();
 
@@ -34,5 +41,23 @@ public sealed class CreateClientEntityDocumentCommandValidator
         RuleFor(x => x.FileSize)
             .GreaterThan(0)
             .When(x => x.FileSize.HasValue);
+
+        RuleFor(x => x.Details)
+            .Must(DetailsJson.IsObjectOrNull)
+            .WithMessage("Details must be a JSON object or null.");
+
+        RuleFor(x => x.Details)
+            .Custom((details, context) =>
+            {
+                var command = context.InstanceToValidate;
+
+                foreach (var failure in _detailsValidator.Validate(
+                    command.Type,
+                    details,
+                    validateRequired: false))
+                {
+                    context.AddFailure(failure);
+                }
+            });
     }
 }

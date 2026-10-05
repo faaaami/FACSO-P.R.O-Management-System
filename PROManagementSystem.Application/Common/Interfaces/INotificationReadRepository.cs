@@ -12,4 +12,8 @@ public interface INotificationReadRepository
             string sortBy,
             string sortDir,
             CancellationToken cancellationToken = default);
+
+    Task<int> GetUnreadCountAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
 }

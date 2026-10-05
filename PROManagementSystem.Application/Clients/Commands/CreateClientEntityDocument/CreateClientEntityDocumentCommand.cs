@@ -12,5 +12,6 @@ public sealed record CreateClientEntityDocumentCommand(
     string? FileUrl,
     string? FileName,
     string? ContentType,
-    long? FileSize
+    long? FileSize,
+    object? Details
 ) : IRequest<CreateClientEntityDocumentResponseDto>;

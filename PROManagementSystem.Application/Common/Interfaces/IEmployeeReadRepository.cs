@@ -16,4 +16,12 @@ public interface IEmployeeReadRepository
     Guid employeeId,
     bool includeDeleted,
     CancellationToken cancellationToken);
+    Task<GetEmployeeByIdResponseDto?> GetByIdForCompanyAsync(
+        Guid clientCompanyId,
+        Guid employeeId,
+        CancellationToken cancellationToken);
+    Task<bool> IsEmployeeInCompanyAsync(
+        Guid clientCompanyId,
+        Guid employeeId,
+        CancellationToken cancellationToken);
 }

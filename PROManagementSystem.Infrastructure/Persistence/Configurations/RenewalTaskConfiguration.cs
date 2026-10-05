@@ -50,7 +50,13 @@ public sealed class RenewalTaskConfiguration
             .HasForeignKey(x => x.RenewalTaskId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex(x => x.DocumentId);
+        // One active renewal task per document.  "Active" means not
+        // soft-deleted and status != Updated.  The filtered unique index
+        // is the database-level backstop against the check-then-insert
+        // race in RenewalTaskCreationService.
+        builder.HasIndex(x => x.DocumentId)
+            .IsUnique()
+            .HasFilter("\"IsDeleted\" = false AND \"Status\" != 6");
         builder.HasIndex(x => x.ClientCompanyId);
         builder.HasIndex(x => x.AssignedStaffId);
         builder.HasIndex(x => x.Status);

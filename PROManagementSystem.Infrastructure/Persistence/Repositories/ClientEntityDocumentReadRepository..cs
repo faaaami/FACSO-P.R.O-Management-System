@@ -2,6 +2,7 @@
 using Npgsql;
 using PROManagementSystem.Application.Clients.Queries.GetClientEntityDocuments;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -60,19 +61,7 @@ public sealed class ClientEntityDocumentReadRepository
         created_at AS CreatedAt,
         updated_at AS UpdatedAt,
 
-        CASE
-            WHEN expiry_date IS NULL
-                THEN 1
-
-            WHEN expiry_date < CURRENT_TIMESTAMP
-                THEN 3
-
-            WHEN expiry_date <= CURRENT_TIMESTAMP
-                + INTERVAL '30 days'
-                THEN 2
-
-            ELSE 1
-        END AS Status
+        {SqlSnippets.DocumentStatusNumericCase("expiry_date")}
 
     FROM documents
     {whereClause}

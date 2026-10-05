@@ -11,10 +11,14 @@ using PROManagementSystem.Application.Agent.Commands.AgentRegisterEntityDocument
 using PROManagementSystem.Application.Agent.Commands.AgentUpdateDocument;
 using PROManagementSystem.Application.Agent.Queries.GetAgentDocumentById;
 using PROManagementSystem.Application.Agent.Queries.GetAgentDocumentDependencies;
+using PROManagementSystem.Application.Agent.Queries.GetAgentDocumentExtraction;
+using PROManagementSystem.Application.Agent.Queries.GetAgentDocumentExtractionFile;
+using PROManagementSystem.Application.Agent.Queries.GetAgentDocumentFile;
 using PROManagementSystem.Application.Agent.Queries.GetAgentDocumentScan;
 using PROManagementSystem.Application.Agent.Queries.GetAgentDocuments;
 using PROManagementSystem.Application.Agent.Queries.GetAgentDocumentVersions;
 using PROManagementSystem.Application.Agent.Queries.GetAgentExpiringDocuments;
+using PROManagementSystem.Application.Agent.Queries.GetAgentPendingDocumentExtractions;
 using PROManagementSystem.Application.Clients.Commands.CreateClientEntityDocument;
 using PROManagementSystem.Application.Documents.Commands.ConfirmDocument;
 using PROManagementSystem.Application.Documents.Commands.CreateDocumentVersion;
@@ -22,9 +26,13 @@ using PROManagementSystem.Application.Documents.Commands.ExtractDocument;
 using PROManagementSystem.Application.Documents.Commands.UpdateDocument;
 using PROManagementSystem.Application.Documents.Queries.GetDocumentById;
 using PROManagementSystem.Application.Documents.Queries.GetDocumentDependencies;
+using PROManagementSystem.Application.Documents.Queries.GetDocumentExtraction;
+using PROManagementSystem.Application.Documents.Queries.GetDocumentExtractionFile;
 using PROManagementSystem.Application.Documents.Queries.GetDocumentScan;
+using PROManagementSystem.Application.Documents.Queries.GetDocumentTypeSchema;
 using PROManagementSystem.Application.Documents.Queries.GetDocumentVersions;
 using PROManagementSystem.Application.Documents.Queries.GetExpiringDocuments;
+using PROManagementSystem.Application.Documents.Queries.GetPendingDocumentExtractions;
 using PROManagementSystem.Application.Employees.Commands.CreateEmployeeDocument;
 using PROManagementSystem.Domain.Enums;
 
@@ -32,7 +40,7 @@ namespace PROManagementSystem.Api.Controllers.Agent;
 
 [ApiController]
 [Route("api/v1/agent")]
-[Authorize]
+[Authorize(Roles = "Agent")]
 public sealed class AgentDocumentsController : ControllerBase
 {
     private static readonly HashSet<string> s_allowedPatchFields =
@@ -44,7 +52,8 @@ public sealed class AgentDocumentsController : ControllerBase
             "FileUrl",
             "FileName",
             "ContentType",
-            "FileSize"
+            "FileSize",
+            "Details"
         };
 
     // The Agent PATCH body is deserialized manually (not via [FromBody] MVC
@@ -130,7 +139,8 @@ public sealed class AgentDocumentsController : ControllerBase
             request.FileUrl,
             request.FileName,
             request.ContentType,
-            request.FileSize);
+            request.FileSize,
+            request.Details);
 
         var result = await _sender.Send(
             command,
@@ -139,6 +149,171 @@ public sealed class AgentDocumentsController : ControllerBase
         return StatusCode(
             StatusCodes.Status201Created,
             ApiResponse<ConfirmDocumentResponseDto>
+                .SuccessResponse(result));
+    }
+
+    // ================================================================
+    // GET /api/v1/agent/documents/{documentId}/file
+    // ================================================================
+
+    [HttpGet("documents/{documentId:guid}/file")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetDocumentFile(
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        var query = new GetAgentDocumentFileQuery(documentId);
+
+        var result = await _sender.Send(
+            query,
+            cancellationToken);
+
+        // Out-of-portfolio, missing, soft-deleted, no attached file, an
+        // unsupported content type or an unreadable/traversal-rejected storage
+        // reference are all indistinguishable (404). The storage reference is
+        // never returned.
+        if (result is null)
+        {
+            return NotFound(
+                ApiResponse<object>
+                    .FailureResponse(
+                        "DOCUMENT_FILE_NOT_FOUND",
+                        "Document file was not found."));
+        }
+
+        return File(
+            result.Content,
+            result.ContentType,
+            result.FileName);
+    }
+
+    // ================================================================
+    // GET /api/v1/agent/documents/extractions
+    // ================================================================
+
+    [HttpGet("documents/extractions")]
+    [ProducesResponseType(typeof(ApiResponse<GetPendingDocumentExtractionsResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetPendingDocumentExtractions(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new GetAgentPendingDocumentExtractionsQuery(
+            page,
+            pageSize,
+            status);
+
+        var result = await _sender.Send(
+            query,
+            cancellationToken);
+
+        return Ok(
+            ApiResponse<GetPendingDocumentExtractionsResponseDto>
+                .SuccessResponse(result));
+    }
+
+    // ================================================================
+    // GET /api/v1/agent/documents/extractions/{extractionId}
+    // ================================================================
+
+    [HttpGet("documents/extractions/{extractionId:guid}")]
+    [ProducesResponseType(typeof(ApiResponse<GetDocumentExtractionResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetDocumentExtraction(
+        Guid extractionId,
+        CancellationToken cancellationToken)
+    {
+        var query = new GetAgentDocumentExtractionQuery(extractionId);
+
+        var result = await _sender.Send(
+            query,
+            cancellationToken);
+
+        if (result is null)
+        {
+            return NotFound(
+                ApiResponse<object>
+                    .FailureResponse(
+                        "EXTRACTION_NOT_FOUND",
+                        "Document extraction was not found."));
+        }
+
+        return Ok(
+            ApiResponse<GetDocumentExtractionResponseDto>
+                .SuccessResponse(result));
+    }
+
+    // ================================================================
+    // GET /api/v1/agent/documents/extractions/{extractionId}/file
+    // ================================================================
+
+    [HttpGet("documents/extractions/{extractionId:guid}/file")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetDocumentExtractionFile(
+        Guid extractionId,
+        CancellationToken cancellationToken)
+    {
+        var query = new GetAgentDocumentExtractionFileQuery(extractionId);
+
+        var result = await _sender.Send(
+            query,
+            cancellationToken);
+
+        if (result is null)
+        {
+            return NotFound(
+                ApiResponse<object>
+                    .FailureResponse(
+                        "EXTRACTION_NOT_FOUND",
+                        "Document extraction was not found."));
+        }
+
+        return File(
+            result.Content,
+            result.ContentType,
+            result.FileName);
+    }
+
+    // ================================================================
+    // GET /api/v1/agent/document-types/{documentType}/schema
+    // ================================================================
+
+    [HttpGet("document-types/{documentType}/schema")]
+    [ProducesResponseType(typeof(ApiResponse<DocumentTypeSchemaResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetDocumentTypeSchema(
+        string documentType,
+        CancellationToken cancellationToken)
+    {
+        var query = new GetDocumentTypeSchemaQuery(documentType);
+
+        var result = await _sender.Send(
+            query,
+            cancellationToken);
+
+        return Ok(
+            ApiResponse<DocumentTypeSchemaResponseDto>
                 .SuccessResponse(result));
     }
 
@@ -168,7 +343,8 @@ public sealed class AgentDocumentsController : ControllerBase
             request.FileUrl,
             request.FileName,
             request.ContentType,
-            request.FileSize);
+            request.FileSize,
+            request.Details);
 
         var result = await _sender.Send(
             command,
@@ -206,7 +382,8 @@ public sealed class AgentDocumentsController : ControllerBase
             request.FileUrl,
             request.FileName,
             request.ContentType,
-            request.FileSize);
+            request.FileSize,
+            request.Details);
 
         var result = await _sender.Send(
             command,
@@ -387,7 +564,7 @@ public sealed class AgentDocumentsController : ControllerBase
                         $"Unsupported field(s) for agent document update: " +
                         $"{string.Join(", ", unsupportedFields)}. Allowed fields: " +
                         "DocumentNumber, IssueDate, ExpiryDate, FileUrl, FileName, " +
-                        "ContentType, FileSize."));
+                        "ContentType, FileSize, Details."));
             }
 
             // Parse allowed fields via a DTO so values are coerced
@@ -436,6 +613,7 @@ public sealed class AgentDocumentsController : ControllerBase
                 request.FileName,
                 request.ContentType,
                 request.FileSize,
+                request.Details,
                 presentProperties);
 
             var result = await _sender.Send(

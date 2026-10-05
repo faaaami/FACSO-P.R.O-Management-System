@@ -45,11 +45,23 @@ public sealed class CreateClientContactCommandHandler
                 "Client company was not found.");
         }
 
-        // 2. Check whether email is already registered
+        // 2. Normalize the email ONCE and use that normalized value for both
+        // the duplicate check and the stored column.
+        //
+        // The duplicate check previously compared the RAW request value while
+        // the row was stored normalized, so a case or whitespace variant slipped
+        // past the application check and surfaced as a database unique-constraint
+        // failure (500) instead of the intended 409. Comparing against the same
+        // normalized form the Staff path already uses closes that gap.
+        // Soft-deleted rows stay excluded by the global query filter, so a
+        // released email can be reused.
+        var normalizedEmail =
+            request.Email.Trim().ToLowerInvariant();
+
         var emailExists =
             await _context.Users
                 .AnyAsync(
-                    x => x.Email == request.Email,
+                    x => x.Email.ToLower() == normalizedEmail,
                     cancellationToken);
 
         if (emailExists)
@@ -58,20 +70,23 @@ public sealed class CreateClientContactCommandHandler
                 "A user with this email already exists.");
         }
 
-        // 3. Generate temporary password
-        var temporaryPassword =
-            GenerateTemporaryPassword();
-
-        // 4. Hash password
+        // 3. Hash the Admin-supplied password.
+        //
+        // The Admin chooses this value and shares it with the client over a
+        // channel they trust, so there is no generated credential on this path
+        // and none is returned. The plaintext is consumed here exactly once: it
+        // goes into the hasher and is never assigned to the entity, never
+        // written to the audit description, never logged, and never passed to
+        // the invitation email.
         var passwordHash =
-            _passwordHasher.Hash(temporaryPassword);
+            _passwordHasher.Hash(request.Password);
 
         // 5. Create real User
         var user = new User
         {
             Id = Guid.NewGuid(),
             FullName = request.FullName.Trim(),
-            Email = request.Email.Trim().ToLowerInvariant(),
+            Email = normalizedEmail,
             Phone = request.Phone?.Trim(),
             PasswordHash = passwordHash,
 
@@ -87,7 +102,7 @@ public sealed class CreateClientContactCommandHandler
             // but client has not completed onboarding yet.
             IsApproved = false,
 
-            EmailVerified = false,
+            EmailVerified = true,
 
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -114,11 +129,14 @@ public sealed class CreateClientContactCommandHandler
         await _context.SaveChangesAsync(
             cancellationToken);
 
-        // 6. Stub invitation email
+        // 6. Invitation email.
+        //
+        // The password is deliberately NOT passed. The Admin shares it with the
+        // client manually, so transmitting it here would put a live credential
+        // on a channel the Admin was told not to use.
         await _emailService.SendClientInvitationAsync(
      user.Email,
      user.FullName,
-     temporaryPassword,
      cancellationToken);
 
         return new CreateClientContactResponseDto(
@@ -130,10 +148,5 @@ public sealed class CreateClientContactCommandHandler
             user.Role.ToString(),
             user.IsActive,
             user.IsApproved);
-    }
-
-    private static string GenerateTemporaryPassword()
-    {
-        return $"PRO@{Random.Shared.Next(100000, 999999)}";
     }
 }

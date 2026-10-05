@@ -86,8 +86,8 @@ public class AuthTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "A valid valid Admin token is authenticated on an Agent endpoint")]
-    public async Task ValidAdminToken_Returns200()
+        "Admin token on an Agent-only endpoint returns 403 (C1 gate)")]
+    public async Task AdminToken_OnAgentEndpoint_Returns403()
     {
         var token = JwtHelper.MintToken(
             TestDataSeeder.Ids.Admin,
@@ -98,13 +98,12 @@ public class AuthTests : IntegrationTestBase
         var response = await AuthClient.SendAsync(
             AuthGet("/api/v1/agent/me", token));
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact(DisplayName =
-        "DOC: non-role-gated Agent endpoints accept a Client principal " +
-        "(bare [Authorize], no role policy). Returns 200 not 403.")]
-    public async Task ClientToken_OnAgentEndpoint_IsNotRejected()
+        "Client token on an Agent-only endpoint returns 403 (C1 gate)")]
+    public async Task ClientToken_OnAgentEndpoint_Returns403()
     {
         var token = JwtHelper.MintToken(
             TestDataSeeder.Ids.ClientUserA,
@@ -116,9 +115,7 @@ public class AuthTests : IntegrationTestBase
         var response = await AuthClient.SendAsync(
             AuthGet("/api/v1/agent/me", token));
 
-        // Documented behavior: Agent controllers use bare [Authorize], so any
-        // authenticated role is accepted at the controller boundary.
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact(DisplayName =

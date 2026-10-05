@@ -197,7 +197,8 @@ public sealed class EmployeesController : ControllerBase
             request.FileUrl,
             request.FileName,
             request.ContentType,
-            request.FileSize);
+            request.FileSize,
+            request.Details);
 
         var result = await _sender.Send(
             command,
@@ -214,6 +215,7 @@ public sealed class EmployeesController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetDocuments(
     Guid employeeId,
@@ -266,6 +268,7 @@ public sealed class EmployeesController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetTimeline(
     Guid employeeId,

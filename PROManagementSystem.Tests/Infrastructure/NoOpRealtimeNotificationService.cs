@@ -20,4 +20,10 @@ public sealed class NoOpRealtimeNotificationService
         TaskStatusChangedEvent notification,
         CancellationToken cancellationToken)
         => Task.CompletedTask;
+
+    public Task SendNotificationReceivedAsync(
+        Guid userId,
+        NotificationReceivedDto notification,
+        CancellationToken cancellationToken)
+        => Task.CompletedTask;
 }

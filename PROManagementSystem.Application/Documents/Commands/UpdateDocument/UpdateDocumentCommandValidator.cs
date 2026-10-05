@@ -1,12 +1,19 @@
 ﻿using FluentValidation;
+using PROManagementSystem.Application.Common.Helpers;
+using PROManagementSystem.Application.Common.Validation;
 
 namespace PROManagementSystem.Application.Documents.Commands.UpdateDocument;
 
 public sealed class UpdateDocumentCommandValidator
     : AbstractValidator<UpdateDocumentCommand>
 {
-    public UpdateDocumentCommandValidator()
+    private readonly DocumentDetailsValidator _detailsValidator;
+
+    public UpdateDocumentCommandValidator(
+        DocumentDetailsValidator detailsValidator)
     {
+        _detailsValidator = detailsValidator;
+
         RuleFor(x => x.DocumentId)
             .NotEmpty()
             .WithMessage("Document ID is required.");
@@ -39,5 +46,23 @@ public sealed class UpdateDocumentCommandValidator
             .GreaterThanOrEqualTo(0)
             .When(x => x.FileSize.HasValue)
             .WithMessage("File size cannot be negative.");
+
+        RuleFor(x => x.Details)
+            .Must(DetailsJson.IsObjectOrNull)
+            .WithMessage("Details must be a JSON object or null.");
+
+        RuleFor(x => x.Details)
+            .Custom((details, context) =>
+            {
+                var command = context.InstanceToValidate;
+
+                foreach (var failure in _detailsValidator.Validate(
+                    command.Type,
+                    details,
+                    validateRequired: false))
+                {
+                    context.AddFailure(failure);
+                }
+            });
     }
 }

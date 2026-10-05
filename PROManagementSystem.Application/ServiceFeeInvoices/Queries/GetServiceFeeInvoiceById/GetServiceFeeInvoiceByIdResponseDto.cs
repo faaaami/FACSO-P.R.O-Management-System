@@ -18,5 +18,8 @@ public sealed record GetServiceFeeInvoiceByIdResponseDto(
     DateTime? VoidedAt,
     string? VoidReason,
     DateTime CreatedAt,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    Guid? PaymentOrderId,
+    PaymentStatus? PaymentOrderStatus,
+    string? RazorpayOrderId
 );

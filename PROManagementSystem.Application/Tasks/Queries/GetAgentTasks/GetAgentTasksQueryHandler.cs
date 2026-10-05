@@ -30,6 +30,8 @@ public sealed class GetAgentTasksQueryHandler
             request.Status,
             agentId,
             null,
+            request.Page,
+            request.PageSize,
             cancellationToken);
     }
 }

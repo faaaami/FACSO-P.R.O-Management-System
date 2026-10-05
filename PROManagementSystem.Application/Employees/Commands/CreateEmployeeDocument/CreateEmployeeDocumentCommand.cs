@@ -12,5 +12,6 @@ public sealed record CreateEmployeeDocumentCommand(
     string? FileUrl,
     string? FileName,
     string? ContentType,
-    long? FileSize
+    long? FileSize,
+    object? Details
 ) : IRequest<CreateEmployeeDocumentResponseDto>;

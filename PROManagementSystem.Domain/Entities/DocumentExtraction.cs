@@ -23,9 +23,22 @@ public class DocumentExtraction : BaseEntity
 
     public string? SuggestedOwnerType { get; set; }
 
+    // Non-authoritative extraction/AI suggestions for type-specific details
+    // (Task 7B.2). A JSON object serialized with System.Text.Json (keys follow
+    // the schema registry's DocumentFieldDefinition.Key contract). "No
+    // suggestions" is the empty object "{}"; this string is never null. OCR
+    // text must never be stored here.
+    public string SuggestedDetails { get; set; } = "{}";
+
     public decimal Confidence { get; set; }
 
     public string Status { get; set; } = "Pending";
 
     public DateTime? ExpiresAt { get; set; }
+
+    // The agent who created this extraction draft. Nullable so extraction
+    // rows created before this column existed remain valid (legacy rows).
+    public Guid? CreatedBy { get; set; }
+
+    public User? CreatedByUser { get; set; }
 }

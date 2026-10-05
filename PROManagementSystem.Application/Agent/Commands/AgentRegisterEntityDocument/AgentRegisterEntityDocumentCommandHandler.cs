@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Clients.Commands.CreateClientEntityDocument;
+using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Domain.Entities;
 
@@ -62,7 +63,17 @@ public sealed class AgentRegisterEntityDocumentCommandHandler
                 "Client entity was not found.");
         }
 
-        // 2. Create document
+        // 2. Reject when the same owner already holds an active document
+        //    with this type and document number.
+        await DocumentDuplicateGuard.EnsureNotDuplicateAsync(
+            _context,
+            null,
+            entity.Id,
+            request.Type,
+            request.DocumentNumber,
+            cancellationToken);
+
+        // 3. Create document
         var now = DateTime.UtcNow;
 
         var document = new Document
@@ -88,6 +99,9 @@ public sealed class AgentRegisterEntityDocumentCommandHandler
             ContentType = request.ContentType?.Trim(),
 
             FileSize = request.FileSize,
+
+            Details =
+                DetailsJson.ToStorage(request.Details),
 
             IsActive = true,
 
@@ -134,6 +148,7 @@ public sealed class AgentRegisterEntityDocumentCommandHandler
             document.ContentType,
             document.FileSize,
             document.IsActive,
-            document.CreatedAt);
+            document.CreatedAt,
+            DetailsJson.FromStorage(document.Details));
     }
 }

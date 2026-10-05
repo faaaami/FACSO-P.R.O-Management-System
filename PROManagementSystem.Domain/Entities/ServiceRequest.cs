@@ -9,7 +9,18 @@ public sealed class ServiceRequest : BaseEntity
 
     public ClientCompany? ClientCompany { get; set; }
 
-    public Guid DocumentId { get; set; }
+    public ServiceRequestType Type { get; set; }
+        = ServiceRequestType.Other;
+
+    public Guid? EmployeeId { get; set; }
+
+    public Employee? Employee { get; set; }
+
+    public Guid? EntityId { get; set; }
+
+    public ClientEntity? Entity { get; set; }
+
+    public Guid? DocumentId { get; set; }
 
     public Document? Document { get; set; }
 

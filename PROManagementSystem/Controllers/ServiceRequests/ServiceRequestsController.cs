@@ -11,7 +11,7 @@ namespace PROManagementSystem.Api.Controllers.ServiceRequests;
 
 [ApiController]
 [Route("api/v1/service-requests")]
-[Authorize]
+[Authorize(Roles = "Admin")]
 public sealed class ServiceRequestsController : ControllerBase
 {
     private readonly ISender _sender;

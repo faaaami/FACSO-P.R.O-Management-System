@@ -1,4 +1,5 @@
 ﻿using MediatR;
+using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Interfaces;
 
 namespace PROManagementSystem.Application.Clients.Queries.GetClientEntities;
@@ -9,11 +10,14 @@ public sealed class GetClientEntitiesQueryHandler
         GetClientEntitiesResponseDto>
 {
     private readonly IClientEntityReadRepository _repository;
+    private readonly IApplicationDbContext _context;
 
     public GetClientEntitiesQueryHandler(
-        IClientEntityReadRepository repository)
+        IClientEntityReadRepository repository,
+        IApplicationDbContext context)
     {
         _repository = repository;
+        _context = context;
     }
 
     public async Task<GetClientEntitiesResponseDto> Handle(
@@ -30,6 +34,20 @@ public sealed class GetClientEntitiesQueryHandler
         {
             throw new ArgumentException(
                 "PageSize must be between 1 and 100.");
+        }
+
+        // Nonexistent or soft-deleted parent company -> 404, not an empty list.
+        var companyExists =
+            await _context.ClientCompanies
+                .AnyAsync(
+                    x => x.Id == request.ClientCompanyId &&
+                         !x.IsDeleted,
+                    cancellationToken);
+
+        if (!companyExists)
+        {
+            throw new KeyNotFoundException(
+                "Client company was not found.");
         }
 
         return await _repository.GetPagedAsync(

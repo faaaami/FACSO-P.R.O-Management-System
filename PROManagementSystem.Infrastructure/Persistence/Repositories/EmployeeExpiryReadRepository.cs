@@ -2,6 +2,7 @@
 using Npgsql;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.Employees.Queries.GetExpiringEmployees;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 
 namespace PROManagementSystem.Infrastructure.Persistence.Repositories;
 
@@ -35,23 +36,10 @@ public sealed class EmployeeExpiryReadRepository
             "d.expiry_date IS NOT NULL"
         };
 
-        if (includeExpired)
-        {
-            whereConditions.Add(
-                """
-                d.expiry_date <= CURRENT_TIMESTAMP
-                    + (@Days * INTERVAL '1 day')
-                """);
-        }
-        else
-        {
-            whereConditions.Add(
-                """
-                d.expiry_date >= CURRENT_TIMESTAMP
-                AND d.expiry_date <= CURRENT_TIMESTAMP
-                    + (@Days * INTERVAL '1 day')
-                """);
-        }
+        whereConditions.Add(
+            SqlSnippets.ExpiryWindowCondition(
+                "d.expiry_date",
+                includeExpired));
 
         var whereClause =
             "WHERE " +
@@ -78,23 +66,9 @@ public sealed class EmployeeExpiryReadRepository
                 d.document_number AS DocumentNumber,
                 d.expiry_date AS ExpiryDate,
 
-                FLOOR(
-                    EXTRACT(
-                        EPOCH FROM
-                        (d.expiry_date - CURRENT_TIMESTAMP)
-                    ) / 86400
-                )::int AS DaysRemaining,
+                {SqlSnippets.DaysRemaining("d.expiry_date")},
 
-                CASE
-                    WHEN d.expiry_date < CURRENT_TIMESTAMP
-                        THEN 'Expired'
-
-                    WHEN d.expiry_date <= CURRENT_TIMESTAMP
-                        + INTERVAL '30 days'
-                        THEN 'ExpiringSoon'
-
-                    ELSE 'Active'
-                END AS Status
+                {SqlSnippets.ExpiryStatusLabelCase("d.expiry_date", 90)}
 
             FROM employees e
 
@@ -105,8 +79,7 @@ public sealed class EmployeeExpiryReadRepository
 
             ORDER BY d.expiry_date ASC
 
-            OFFSET @Offset
-            LIMIT @PageSize;
+            {SqlSnippets.Pagination};
             """;
 
         await using var connection =

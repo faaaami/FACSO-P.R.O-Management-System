@@ -183,10 +183,59 @@ public sealed class RenewalTaskCreationService
 
         _context.RenewalTaskHistories.Add(history);
 
-        // 10. Save
-        await _context.SaveChangesAsync(
-            cancellationToken);
+        // 10. Record creation (automation actor from
+        //     RenewalAutomation:UserId, same as history ChangedBy)
+        var auditLog = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = changedBy,
+            Action = "RenewalTaskCreated",
+            EntityType = "RenewalTask",
+            EntityId = task.Id,
+            Description =
+                $"Renewal task was created automatically " +
+                $"for document '{document.Id}'.",
+            CreatedAt = now,
+            UpdatedAt = now,
+            IsDeleted = false,
+            DeletedAt = null
+        };
+        _context.AuditLogs.Add(auditLog);
+
+        // 11. Save — the unique filtered index on DocumentId is the
+        //     database-level backstop.  If a concurrent job execution
+        //     inserted the same task between our check (step 7) and
+        //     this save, PostgreSQL raises 23505 on the filtered
+        //     unique index.  Treat it as an idempotent no-op.
+        try
+        {
+            await _context.SaveChangesAsync(
+                cancellationToken);
+        }
+        catch (DbUpdateException ex) when (
+            IsRenewalDocumentUniqueViolation(ex))
+        {
+            return null;
+        }
 
         return task.Id;
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the <see cref="DbUpdateException"/>
+    /// is the specific filtered-unique renewal-task-per-document
+    /// constraint violation (PostgreSQL error code 23505).
+    /// </summary>
+    private static bool IsRenewalDocumentUniqueViolation(
+        DbUpdateException ex)
+    {
+        // Npgsql wraps the PostgresException as the inner exception.
+        // The message contains the SQL state and constraint name:
+        //   "23505: duplicate key value violates unique constraint
+        //    \"IX_renewal_tasks_DocumentId\""
+        var inner = ex.InnerException?.Message ?? ex.Message;
+
+        return inner.Contains("23505") &&
+               inner.Contains("IX_renewal_tasks_DocumentId");
     }
 }

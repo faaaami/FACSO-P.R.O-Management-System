@@ -8,7 +8,7 @@ namespace PROManagementSystem.Api.Controllers.Dashboard;
 
 [ApiController]
 [Route("api/v1/dashboard")]
-[Authorize]
+[Authorize(Roles = "Admin")]
 public sealed class DashboardController : ControllerBase
 {
     private readonly IDashboardReadRepository _readRepository;
@@ -32,19 +32,6 @@ public sealed class DashboardController : ControllerBase
         return Ok(ApiResponse<DashboardSummaryDto>.SuccessResponse(result));
     }
 
-    [HttpGet("staff-workload")]
-    [ProducesResponseType(typeof(ApiResponse<DashboardStaffWorkloadDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetStaffWorkload(
-        CancellationToken cancellationToken)
-    {
-        var result = await _readRepository.GetStaffWorkloadAsync(
-            cancellationToken);
-
-        return Ok(ApiResponse<DashboardStaffWorkloadDto>.SuccessResponse(result));
-    }
-
     [HttpGet("activity-feed")]
     [ProducesResponseType(typeof(ApiResponse<DashboardActivityFeedResponseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -54,6 +41,22 @@ public sealed class DashboardController : ControllerBase
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
+        if (page < 1)
+        {
+            return BadRequest(
+                ApiResponse<object>.FailureResponse(
+                    "INVALID_PAGE",
+                    "Page must be greater than or equal to 1."));
+        }
+
+        if (pageSize is < 1 or > 100)
+        {
+            return BadRequest(
+                ApiResponse<object>.FailureResponse(
+                    "INVALID_PAGE_SIZE",
+                    "Page size must be between 1 and 100."));
+        }
+
         var result = await _readRepository.GetActivityFeedAsync(
             page, pageSize, cancellationToken);
 
@@ -61,7 +64,6 @@ public sealed class DashboardController : ControllerBase
     }
 
     [HttpGet("revenue")]
-    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponse<DashboardRevenueDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -84,6 +86,14 @@ public sealed class DashboardController : ControllerBase
         [FromQuery] int days = 90,
         CancellationToken cancellationToken = default)
     {
+        if (days is < 1 or > 365)
+        {
+            return BadRequest(
+                ApiResponse<object>.FailureResponse(
+                    "INVALID_DAYS",
+                    "Days must be between 1 and 365."));
+        }
+
         var result = await _readRepository.GetExpiringDocumentsAsync(
             days, cancellationToken);
 
@@ -98,6 +108,14 @@ public sealed class DashboardController : ControllerBase
         [FromQuery] int days = 90,
         CancellationToken cancellationToken = default)
     {
+        if (days is < 1 or > 365)
+        {
+            return BadRequest(
+                ApiResponse<object>.FailureResponse(
+                    "INVALID_DAYS",
+                    "Days must be between 1 and 365."));
+        }
+
         var result = await _readRepository.GetExpiringEmployeesAsync(
             days, cancellationToken);
 

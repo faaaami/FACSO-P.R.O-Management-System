@@ -13,5 +13,6 @@ public sealed record AgentRegisterEmployeeDocumentCommand(
     string? FileUrl,
     string? FileName,
     string? ContentType,
-    long? FileSize
+    long? FileSize,
+    object? Details
 ) : IRequest<CreateEmployeeDocumentResponseDto>;
