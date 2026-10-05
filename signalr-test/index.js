@@ -69,7 +69,7 @@ async function login(baseUrl, email, password) {
 
 function buildConnection(url, token) {
   const conn = new signalR.HubConnectionBuilder()
-    .withUrl(`${url}/hubs/notification`, {
+    .withUrl(`${url}/hubs/notifications`, {
       accessTokenFactory: () => token,
     })
     .withAutomaticReconnect()
