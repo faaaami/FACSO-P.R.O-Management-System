@@ -62,6 +62,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasColumnName("email_verified")
             .HasDefaultValue(false);
 
+        builder.Property(x => x.MustChangePassword)
+            .HasColumnName("must_change_password")
+            .HasDefaultValue(false);
+
         builder.Property(x => x.ClientCompanyId)
             .HasColumnName("client_company_id");
 

@@ -24,6 +24,11 @@ public class User : BaseEntity
 
     public bool EmailVerified { get; set; } = false;
 
+    // Set for accounts whose password was chosen by someone else (the
+    // bootstrap Admin). Every request except changing the password is
+    // refused until it is cleared.
+    public bool MustChangePassword { get; set; } = false;
+
     public Guid? ClientCompanyId { get; set; }
     public ClientCompany? ClientCompany { get; set; }
 }

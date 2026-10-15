@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PROManagementSystem.Domain.Entities;
 
@@ -17,6 +17,13 @@ public sealed class PasswordResetTokenConfiguration
         builder.Property(x => x.TokenHash)
             .IsRequired()
             .HasMaxLength(128);
+
+        // Existing rows predate invitations; the migration backfills them
+        // as PasswordReset.
+        builder.Property(x => x.Purpose)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
 
         builder.Property(x => x.ExpiresAt)
             .IsRequired();
