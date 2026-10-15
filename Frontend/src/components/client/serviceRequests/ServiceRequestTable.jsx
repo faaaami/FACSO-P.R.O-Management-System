@@ -49,6 +49,44 @@ function NotesPreview({ description }) {
   return <span className="block max-w-[16rem] truncate">{description}</span>
 }
 
+/**
+ * The status pill, plus the rejection reason when there is one.
+ *
+ * The reason is the part a client actually needs from a rejected row, and a list
+ * whose only signal is the word "Rejected" makes them open every one of them to
+ * find out why. It is placed under the pill in the status cell rather than in its
+ * own column, so the reason appears only where there is room for it — one line,
+ * truncated — and the full text stays available in the element's `title` and in the
+ * details drawer.
+ *
+ * A rejected request with no recorded reason renders the honest fallback rather
+ * than an empty line. This can only be a request decided before a reason was
+ * required, but the list must not imply there is nothing to see.
+ */
+function StatusCell({ item }) {
+  const isRejected = item.status === 'Rejected'
+
+  return (
+    <div className="flex flex-col items-start gap-1.5">
+      <StatusPill
+        label={enumLabel(SERVICE_REQUEST_STATUS, item.status) ?? 'Submitted'}
+        tone={requestStatusTone(item.status)}
+      />
+      {isRejected &&
+        (item.rejectionReason ? (
+          <span
+            className="block max-w-[16rem] truncate text-[11px] text-[#9A1C1C]"
+            title={item.rejectionReason}
+          >
+            {item.rejectionReason}
+          </span>
+        ) : (
+          <span className="block text-[11px] text-[#9CA3AF]">No reason recorded</span>
+        ))}
+    </div>
+  )
+}
+
 function RowAction({ onSelect }) {
   return (
     <button
@@ -87,6 +125,21 @@ function MobileRow({ item, onSelect }) {
           <span className="shrink-0 text-[#6B7280]">Notes</span>
           <NotesPreview description={item.description} />
         </div>
+        {/*
+          The reason is shown on the card rather than left behind the status pill,
+          because a mobile card has the vertical room the table's status cell does
+          not and a rejected request is the one a client most needs to read.
+        */}
+        {item.status === 'Rejected' && (
+          <div className="flex items-start justify-between gap-3">
+            <span className="shrink-0 text-[#6B7280]">Reason</span>
+            {item.rejectionReason ? (
+              <span className="text-right text-[#9A1C1C] break-words">{item.rejectionReason}</span>
+            ) : (
+              <span className="text-right text-[#9CA3AF]">No reason recorded</span>
+            )}
+          </div>
+        )}
       </div>
       <div className="self-end">
         <RowAction onSelect={onSelect} />
@@ -198,10 +251,7 @@ function ServiceRequestTable({ data, isLoading, isError, onRetry, page, pageSize
                     {formatDate(item.createdAt) ?? <span className="text-[#9CA3AF]">N/A</span>}
                   </td>
                   <td className="px-4 py-3.5 text-sm text-[#16181D]">
-                    <StatusPill
-                      label={enumLabel(SERVICE_REQUEST_STATUS, item.status) ?? 'Submitted'}
-                      tone={requestStatusTone(item.status)}
-                    />
+                    <StatusCell item={item} />
                   </td>
                   <td className="px-4 py-3.5 text-right">
                     <RowAction onSelect={() => onSelect(item.id)} />

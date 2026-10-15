@@ -2,7 +2,10 @@ import { AlertCircle, RotateCcw } from 'lucide-react'
 
 function ErrorState({ message, onRetry }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-[10px] border border-red-200 bg-red-50/60 px-6 py-6 text-center">
+    <div
+      role="alert"
+      className="flex flex-col items-center justify-center rounded-[10px] border border-red-200 bg-red-50/60 px-6 py-6 text-center"
+    >
       <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-red-100 text-[#DC2626]">
         <AlertCircle size={16} strokeWidth={2} aria-hidden="true" />
       </div>

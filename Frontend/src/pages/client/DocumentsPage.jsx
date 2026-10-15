@@ -36,7 +36,6 @@ function DocumentsPage() {
   const [filters, setFilters] = useState({})
   const [page, setPage] = useState(1)
   const [selectedDocumentId, setSelectedDocumentId] = useState(null)
-  const [scanRequested, setScanRequested] = useState(false)
   const [employeeId, setEmployeeId] = useState(null)
 
   const { data: totalData } = useClientDocuments({ page: 1, pageSize: 1 })
@@ -64,12 +63,10 @@ function DocumentsPage() {
 
   const openDocument = (documentId) => {
     setSelectedDocumentId(documentId)
-    setScanRequested(false)
   }
 
   const closeDocument = () => {
     setSelectedDocumentId(null)
-    setScanRequested(false)
   }
 
   return (
@@ -131,8 +128,7 @@ function DocumentsPage() {
           documentId={selectedDocumentId}
           onClose={closeDocument}
           onOpenEmployeeDocuments={(id) => setEmployeeId(id)}
-          isScanRequested={scanRequested}
-          onRequestScan={() => setScanRequested(true)}
+
         />
       )}
 

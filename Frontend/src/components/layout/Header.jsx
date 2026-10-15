@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate, Link, useLocation } from 'react-router-dom'
 import {
   Menu,
-  Search,
   Bell,
   ChevronDown,
   Building2,
@@ -11,8 +10,9 @@ import {
   User as UserIcon,
 } from 'lucide-react'
 import { useAuth } from '../../auth/AuthContext'
+import GlobalSearch from './GlobalSearch'
 
-function Header({ onOpenMobileMenu }) {
+function Header({ onOpenMobileMenu, isMobileMenuOpen = false, mobileMenuId }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -41,13 +41,9 @@ function Header({ onOpenMobileMenu }) {
     navigate('/login')
   }
 
-  const userInitial = (user?.email?.[0] || user?.name?.[0] || 'U').toUpperCase()
+  const userInitial = (user?.fullName?.[0] || user?.email?.[0] || 'U').toUpperCase()
   const userRole = user?.role || 'Staff'
-  const userDisplay = user?.name || user?.email?.split('@')[0] || 'Operations Admin'
-  const searchPlaceholder =
-    user?.role === 'Client'
-      ? 'Search documents, requests, employees...'
-      : 'Search clients, documents, requests...'
+  const userDisplay = user?.fullName || user?.name || user?.email?.split('@')[0] || 'Operations Admin'
 
   return (
     <header className="h-16 bg-white border-b border-[#E2E4E9] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4 sticky top-0 z-20">
@@ -57,6 +53,8 @@ function Header({ onOpenMobileMenu }) {
           type="button"
           onClick={onOpenMobileMenu}
           aria-label="Open navigation menu"
+          aria-expanded={isMobileMenuOpen}
+          aria-controls={mobileMenuId}
           className="lg:hidden rounded-[8px] p-2 text-[#6B7280] hover:bg-gray-100 hover:text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#0F9D74] cursor-pointer"
         >
           <Menu className="h-5 w-5" />
@@ -73,19 +71,9 @@ function Header({ onOpenMobileMenu }) {
         </div>
       </div>
 
-      {/* Middle Area: Global Search */}
-      <div className="flex-1 max-w-md hidden sm:block">
-        <div className="relative">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#9CA3AF]">
-            <Search className="h-4 w-4" />
-          </div>
-          <input
-            type="search"
-            placeholder={searchPlaceholder}
-            className="w-full rounded-[10px] border border-[#E2E4E9] bg-[#F7F8FA] pl-10 pr-4 py-2 text-sm text-[#16181D] placeholder:text-[#9CA3AF] focus:bg-white focus:border-[#0F9D74] focus:ring-2 focus:ring-[rgba(15,157,116,0.15)] focus:outline-none transition duration-150"
-          />
-        </div>
-      </div>
+      {/* Middle Area: Role-scoped search (Agent: client lookup + jump to.
+          Client/Admin: jump to only. See GlobalSearch.) */}
+      <GlobalSearch />
 
       {/* Right Area: Notifications & User Profile */}
       <div className="flex items-center gap-3 sm:gap-4">
@@ -147,14 +135,16 @@ function Header({ onOpenMobileMenu }) {
                   <Settings className="h-4 w-4 text-[#6B7280]" />
                   <span>Settings</span>
                 </Link>
-                <Link
-                  to={user?.role === 'Client' ? '/company-profile' : '/staff'}
-                  onClick={() => setIsDropdownOpen(false)}
-                  className="flex items-center gap-2.5 px-4 py-2 text-sm text-[#16181D] hover:bg-gray-50 transition-colors"
-                >
-                  <UserIcon className="h-4 w-4 text-[#6B7280]" />
-                  <span>Profile</span>
-                </Link>
+                {user?.role !== 'Agent' && (
+                  <Link
+                    to={user?.role === 'Client' ? '/company-profile' : '/staff'}
+                    onClick={() => setIsDropdownOpen(false)}
+                    className="flex items-center gap-2.5 px-4 py-2 text-sm text-[#16181D] hover:bg-gray-50 transition-colors"
+                  >
+                    <UserIcon className="h-4 w-4 text-[#6B7280]" />
+                    <span>Profile</span>
+                  </Link>
+                )}
               </div>
 
               <div className="border-t border-[#E2E4E9] pt-1">

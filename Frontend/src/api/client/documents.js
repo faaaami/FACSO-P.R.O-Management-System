@@ -19,15 +19,6 @@ export async function getClientDocument(id) {
 }
 
 /**
- * Retrieves a client document's scan file reference.
- * GET /api/v1/client/documents/{id}/scan
- */
-export async function getClientDocumentScan(id) {
-  const response = await apiClient.get(`/client/documents/${id}/scan`)
-  return response.data.data
-}
-
-/**
  * Retrieves the client's documents expiring within the given window.
  * GET /api/v1/client/documents/expiring
  */
@@ -43,4 +34,22 @@ export async function getClientExpiringDocuments(params = {}) {
 export async function getClientEmployeeDocuments(employeeId) {
   const response = await apiClient.get(`/client/employees/${employeeId}/documents`)
   return response.data.data
+}
+
+/**
+ * Downloads one of the client's own finalized document files.
+ * GET /api/v1/client/documents/{id}/file
+ *
+ * Scoped to the signed-in client company, using the same company scoping as
+ * the client document detail endpoint. The DTOs' `fileUrl` is a relative
+ * storage reference that is not browser-retrievable, so an owned file must come
+ * from here. Read-only: the client has no upload, extraction or confirmation
+ * surface. Returns raw bytes, so `responseType: 'blob'` is required and the
+ * caller must revoke the object URL it creates.
+ */
+export async function getClientDocumentFile(id) {
+  const response = await apiClient.get(`/client/documents/${id}/file`, {
+    responseType: 'blob',
+  })
+  return response.data
 }

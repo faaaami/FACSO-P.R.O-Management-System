@@ -7,6 +7,28 @@ import { SERVICE_REQUEST_TYPES } from '../enumLabels'
 
 const PAGE_SIZE = 100
 
+/**
+ * THE ONLY SERVICE A CLIENT CAN ACTUALLY REQUEST.
+ *
+ * ServiceRequestType still has three members — NewVisa, EarlyRenewal and Other —
+ * and SERVICE_REQUEST_TYPES still labels all three, because requests already
+ * recorded under the other two must keep displaying their real type. The enum is
+ * not being changed here.
+ *
+ * What is limited is what can be CREATEd, and only EarlyRenewal is offered,
+ * because it is the only type the workflow can carry to completion:
+ * CreateServiceRequestCommandHandler resolves a linked document only for
+ * EarlyRenewal, and ConvertServiceRequestCommandHandler refuses any request with no
+ * linked document. A client raising a NewVisa or Other request today gets a
+ * request that is accepted, sits in the queue, and can only ever be rejected —
+ * which is a worse outcome than telling them at the point of submission that the
+ * service is not offered here.
+ *
+ * Kept as an explicit list rather than a filter over SERVICE_REQUEST_TYPES so that
+ * adding a member to the enum cannot silently re-open this selector.
+ */
+const SUPPORTED_SERVICE_TYPES = ['EarlyRenewal']
+
 const inputClasses =
   'h-10 w-full rounded-[10px] border border-[#E2E4E9] bg-white px-3.5 py-2 text-sm text-[#16181D] focus:border-[#0F9D74] focus:ring-2 focus:ring-[rgba(15,157,116,0.15)] focus:outline-none transition duration-150'
 
@@ -121,7 +143,10 @@ function ServiceRequestCreatePanel() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Field label="Service Type" hint="Early Renewal attaches the employee or entity's active visa automatically">
+        <Field
+          label="Service Type"
+          hint="Early renewal attaches the employee or entity's active visa automatically, so the request can be turned into a renewal task"
+        >
           <select
             className={inputClasses}
             value={type}
@@ -129,7 +154,7 @@ function ServiceRequestCreatePanel() {
             disabled={mutation.isPending}
           >
             <option value="">Select a service type</option>
-            {Object.keys(SERVICE_REQUEST_TYPES).map((key) => (
+            {SUPPORTED_SERVICE_TYPES.map((key) => (
               <option key={key} value={key}>
                 {SERVICE_REQUEST_TYPES[key]}
               </option>

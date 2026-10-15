@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { login as loginRequest } from '../api/auth'
+import { login as loginRequest, logout as logoutRequest } from '../api/auth'
 import {
   getAccessToken,
   getRefreshToken,
   getUser,
   setAuthSession,
   clearAuthSession,
+  SESSION_UPDATED_EVENT,
 } from './storage'
 
 const AuthContext = createContext(null)
@@ -26,6 +27,16 @@ export function AuthProvider({ children }) {
     setIsInitializing(false)
   }, [])
 
+  useEffect(() => {
+    function handleSessionUpdated() {
+      setAccessToken(getAccessToken())
+      setUser(getUser())
+    }
+    window.addEventListener(SESSION_UPDATED_EVENT, handleSessionUpdated)
+    return () =>
+      window.removeEventListener(SESSION_UPDATED_EVENT, handleSessionUpdated)
+  }, [])
+
   async function login(credentials) {
     const data = await loginRequest(credentials)
     setAuthSession({
@@ -38,10 +49,34 @@ export function AuthProvider({ children }) {
     return data
   }
 
-  function logout() {
+  // Clear-first: the local session is torn down synchronously so signing out
+  // always works, even with no network. The refresh token is captured before
+  // clearing and only then sent to the server so it can be revoked. A failed
+  // revocation is intentionally ignored - the local session is already gone.
+  async function logout() {
+    const refreshToken = getRefreshToken()
     clearAuthSession()
     setAccessToken(null)
     setUser(null)
+    if (!refreshToken) {
+      return
+    }
+    try {
+      await logoutRequest(refreshToken)
+    } catch {
+      // Best-effort server-side revocation. Never surface to the user and
+      // never leave the client authenticated.
+    }
+  }
+
+  function updateUser(partial) {
+    const mergedUser = { ...getUser(), ...partial }
+    setAuthSession({
+      accessToken: getAccessToken(),
+      refreshToken: getRefreshToken(),
+      user: mergedUser,
+    })
+    setUser(mergedUser)
   }
 
   const isAuthenticated = Boolean(accessToken && user)
@@ -53,6 +88,7 @@ export function AuthProvider({ children }) {
     isInitializing,
     login,
     logout,
+    updateUser,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

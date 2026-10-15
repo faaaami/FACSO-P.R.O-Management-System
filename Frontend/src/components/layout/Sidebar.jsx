@@ -1,67 +1,11 @@
 import { NavLink } from 'react-router-dom'
-import {
-  LayoutDashboard,
-  Building2,
-  Users,
-  FileText,
-  FileSignature,
-  RefreshCw,
-  ClipboardList,
-  Receipt,
-  UserCheck,
-  Bell,
-  History,
-  Settings,
-  X,
-} from 'lucide-react'
+import { Building2, X } from 'lucide-react'
 import { useAuth } from '../../auth/AuthContext'
-
-const ADMIN_NAVIGATION = [
-  { name: 'Dashboard', path: '/', icon: LayoutDashboard, exact: true },
-  { name: 'Clients', path: '/clients', icon: Building2 },
-  { name: 'Employees', path: '/employees', icon: Users },
-  { name: 'Documents', path: '/documents', icon: FileText },
-  { name: 'Renewal Tasks', path: '/renewal-tasks', icon: RefreshCw },
-  { name: 'Service Requests', path: '/service-requests', icon: ClipboardList },
-  { name: 'Invoices', path: '/invoices', icon: Receipt },
-  { name: 'Staff', path: '/staff', icon: UserCheck },
-  { name: 'Notifications', path: '/notifications', icon: Bell },
-  { name: 'Audit Log', path: '/audit-log', icon: History },
-  { name: 'Settings', path: '/settings', icon: Settings },
-]
-
-const AGENT_NAVIGATION = [
-  { name: 'Dashboard', path: '/', icon: LayoutDashboard, exact: true },
-  { name: 'Clients', path: '/clients', icon: Building2 },
-  { name: 'Employees', path: '/employees', icon: Users },
-  { name: 'Documents', path: '/documents', icon: FileText },
-  { name: 'Renewal Tasks', path: '/renewal-tasks', icon: RefreshCw },
-  { name: 'Notifications', path: '/notifications', icon: Bell },
-  { name: 'Settings', path: '/settings', icon: Settings },
-]
-
-const CLIENT_NAVIGATION = [
-  { name: 'Dashboard', path: '/client', icon: LayoutDashboard, exact: true },
-  { name: 'Contracts', path: '/contracts', icon: FileSignature },
-  { name: 'Documents', path: '/documents', icon: FileText },
-  { name: 'Service Requests', path: '/service-requests', icon: ClipboardList },
-  { name: 'Renewal Tasks', path: '/renewal-tasks', icon: RefreshCw },
-  { name: 'Employees', path: '/employees', icon: Users },
-  { name: 'Billing & Payments', path: '/billing-payments', icon: Receipt },
-  { name: 'Notifications', path: '/notifications', icon: Bell },
-  { name: 'Company Profile', path: '/company-profile', icon: Building2 },
-  { name: 'Settings', path: '/settings', icon: Settings },
-]
-
-const ROLE_NAVIGATION = {
-  Admin: ADMIN_NAVIGATION,
-  Agent: AGENT_NAVIGATION,
-  Client: CLIENT_NAVIGATION,
-}
+import { ROLE_NAVIGATION } from './navigation'
 
 function Sidebar({ isMobile = false, onClose, onItemClick }) {
   const { user } = useAuth()
-  const items = ROLE_NAVIGATION[user?.role] ?? ADMIN_NAVIGATION
+  const items = ROLE_NAVIGATION[user?.role] ?? []
   return (
     <div className="flex h-full flex-col bg-white">
       {/* Brand Header */}

@@ -6,18 +6,13 @@ import EmptyState from '../EmptyState'
 import StatusPill from '../StatusPill'
 import { useClientExpiringDocuments } from '../../../hooks/client/useClientExpiringDocuments'
 import { DOCUMENT_TYPES, enumLabel } from '../enumLabels'
+import { expiringStatusLabel, expiringStatusTone } from './expiringStatus'
 
 function formatDate(value) {
   if (!value) return null
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return null
   return format(date, 'dd MMM yyyy')
-}
-
-function expiringStatusTone(status) {
-  if (status === 'Expired') return 'danger'
-  if (status === 'Active') return 'success'
-  return 'warning'
 }
 
 function ExpiringDocumentsPanel({ onSelectDocument }) {
@@ -56,7 +51,6 @@ function ExpiringDocumentsPanel({ onSelectDocument }) {
 
         <ul className="mt-3 divide-y divide-[#E2E4E9] border-t border-b border-[#E2E4E9]">
           {data.items.map((doc) => {
-            const isOverdue = doc.daysRemaining <= 0
             return (
               <li key={doc.id} className="flex flex-col gap-2.5 py-3 first:pt-3 last:pb-3">
                 <button
@@ -90,17 +84,11 @@ function ExpiringDocumentsPanel({ onSelectDocument }) {
                 </button>
 
                 <div className="flex shrink-0 items-center gap-2">
-                  <span
-                    className={`inline-flex items-center rounded-[6px] px-2 py-0.5 text-xs font-semibold ${
-                      isOverdue
-                        ? 'bg-red-50 text-[#DC2626] border border-[#DC2626]/20'
-                        : 'bg-amber-50 text-[#D97706] border border-[#D97706]/20'
-                    }`}
-                  >
-                    {isOverdue ? 'Overdue' : `${doc.daysRemaining}d left`}
+                  <span className="inline-flex items-center rounded-[6px] px-2 py-0.5 text-xs font-semibold bg-amber-50 text-[#D97706] border border-[#D97706]/20">
+                    {doc.daysRemaining}d left
                   </span>
                   <StatusPill
-                    label={doc.status}
+                    label={expiringStatusLabel(doc.status)}
                     tone={expiringStatusTone(doc.status)}
                   />
                 </div>

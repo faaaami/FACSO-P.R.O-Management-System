@@ -64,6 +64,24 @@ export const PAYMENT_STATUS = {
   6: 'Refunded',
 }
 
+export const RETAINER_INVOICE_STATUS = {
+  Pending: 'Pending',
+  Paid: 'Paid',
+  Void: 'Void',
+}
+
+export const SERVICE_FEE_INVOICE_STATUS = {
+  Pending: 'Pending',
+  Paid: 'Paid',
+  Void: 'Void',
+}
+
+export const GOV_FEE_DISBURSEMENT_STATUS = {
+  PaidByFirm: 'Paid by Firm',
+  InvoicedToClient: 'Invoiced to Client',
+  Reimbursed: 'Reimbursed',
+}
+
 export function enumLabel(map, value) {
   if (value == null) return null
   return map[value] ?? String(value)

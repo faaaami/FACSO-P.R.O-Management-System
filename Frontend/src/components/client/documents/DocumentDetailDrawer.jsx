@@ -1,19 +1,14 @@
+import { useCallback } from 'react'
 import { format } from 'date-fns'
-import {
-  AlertTriangle,
-  Building2,
-  Eye,
-  FileText,
-  FolderOpen,
-  Users,
-} from 'lucide-react'
+import { Building2, FileText, FolderOpen, Users } from 'lucide-react'
 import Drawer from './Drawer'
 import LoadingState from '../LoadingState'
 import ErrorState from '../ErrorState'
 import EmptyState from '../EmptyState'
 import StatusPill from '../StatusPill'
+import DocumentFilePanel from '../../documents/DocumentFilePanel'
+import { getClientDocumentFile } from '../../../api/client/documents'
 import { useClientDocument } from '../../../hooks/client/useClientDocument'
-import { useClientDocumentScan } from '../../../hooks/client/useClientDocumentScan'
 import { DOCUMENT_TYPES, DOCUMENT_STATUS, enumLabel } from '../enumLabels'
 
 function formatDate(value) {
@@ -38,13 +33,28 @@ function MetaRow({ label, value }) {
   )
 }
 
-function DocumentDetailDrawer({
-  documentId,
-  onClose,
-  onOpenEmployeeDocuments,
-  isScanRequested,
-  onRequestScan,
-}) {
+/**
+ * Read-only document detail drawer for the client portal.
+ *
+ * D1 ADDS AUTHORIZED FILE VIEWING, AND REMOVES THE STORAGE PATH.
+ *
+ * This drawer used to render the attached file as a button that called
+ * `window.open(document.fileUrl)`, falling back to showing the fileUrl as the
+ * file's name when fileName was missing. That value is a relative storage key
+ * describing where the file sits inside the server — not a retrievable URL — so
+ * the tab it opened was a 404, and the fallback printed internal layout on a
+ * customer-facing screen.
+ *
+ * The bytes now come from GET /client/documents/{id}/file, which is scoped to the
+ * signed-in client company with the same authorization as the document detail
+ * endpoint above it. DocumentFilePanel turns them into a short-lived object URL
+ * and revokes it when the preview is closed or the drawer unmounts.
+ *
+ * The client stays READ-ONLY. There is no upload, no extraction review and no
+ * confirmation here: registering a document is an Agent or Admin action, and a
+ * client can only view what already exists for their own company.
+ */
+function DocumentDetailDrawer({ documentId, onClose, onOpenEmployeeDocuments }) {
   const {
     data: document,
     isLoading,
@@ -52,11 +62,7 @@ function DocumentDetailDrawer({
     refetch,
   } = useClientDocument(documentId)
 
-  const {
-    isError: scanIsError,
-    isLoading: scanIsLoading,
-    error: scanError,
-  } = useClientDocumentScan(isScanRequested ? documentId : null)
+  const loadFile = useCallback(() => getClientDocumentFile(documentId), [documentId])
 
   let content
 
@@ -78,7 +84,8 @@ function DocumentDetailDrawer({
       />
     )
   } else {
-    const hasScan = Boolean(document.fileUrl)
+    // Presence check only. The value itself is never displayed or navigated to.
+    const hasFile = Boolean(document.fileUrl)
     const employeeId = document.employeeId
 
     content = (
@@ -136,11 +143,11 @@ function DocumentDetailDrawer({
         </div>
 
         {/* File meta (when present) */}
-        {hasScan && (
+        {hasFile && (
           <div className="rounded-[8px] border border-[#E2E4E9] bg-white p-3 text-xs">
             <span className="font-medium text-[#6B7280]">Attached file:</span>
             <p className="mt-1 text-[#16181D] break-words">
-              {document.fileName ?? document.fileUrl}
+              {document.fileName ?? 'File attached'}
             </p>
             <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[#6B7280]">
               {document.contentType && <span>{document.contentType}</span>}
@@ -180,36 +187,21 @@ function DocumentDetailDrawer({
           <MetaRow label="Last Updated" value={formatDate(document.updatedAt) ?? 'N/A'} />
         </div>
 
-        {/* Actions */}
-        <div className="flex flex-col gap-2.5">
-          {hasScan && (
-            <button
-              type="button"
-              disabled={scanIsLoading}
-              onClick={() => {
-                if (document.fileUrl) {
-                  window.open(document.fileUrl, '_blank', 'noopener,noreferrer')
-                }
-                onRequestScan()
-              }}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-[10px] bg-[#1C1F26] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_1px_3px_rgba(28,31,38,0.06)] hover:bg-[#101319] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#0F9D74] transition duration-150 cursor-pointer"
-            >
-              <Eye size={16} strokeWidth={2} aria-hidden="true" />
-              {scanIsLoading ? 'Preparing…' : 'View File'}
-            </button>
-          )}
-
-          {scanIsError && (
-            <div className="flex items-start gap-2 rounded-[6px] bg-red-50 p-2 text-xs font-medium text-[#DC2626] border border-red-200">
-              <AlertTriangle size={14} className="shrink-0 text-[#DC2626] mt-0.5" aria-hidden="true" />
-              <span>
-                {scanError?.response?.status === 409
-                  ? 'No scan is attached to this document.'
-                  : 'The document file could not be opened.'}
-              </span>
-            </div>
-          )}
-        </div>
+        {/* Authorized file access. The panel fetches the bytes on demand, so a
+            document that was only opened for its metadata costs no transfer. */}
+        {hasFile ? (
+          <DocumentFilePanel
+            load={loadFile}
+            identity={['client-document', documentId]}
+            fileName={document.fileName}
+            contentType={document.contentType}
+            label="View file"
+          />
+        ) : (
+          <p className="rounded-[8px] bg-[#F7F8FA] border border-[#E2E4E9] p-3 text-xs text-[#6B7280]">
+            No file is attached to this document.
+          </p>
+        )}
       </div>
     )
   }

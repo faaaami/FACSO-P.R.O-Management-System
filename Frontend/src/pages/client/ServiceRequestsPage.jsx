@@ -27,7 +27,6 @@ function ServiceRequestsPage() {
   const [page, setPage] = useState(1)
   const [selectedRequestId, setSelectedRequestId] = useState(null)
   const [selectedDocumentId, setSelectedDocumentId] = useState(null)
-  const [scanRequested, setScanRequested] = useState(false)
   const [employeeId, setEmployeeId] = useState(null)
 
   const { data: totalData } = useClientServiceRequests({ page: 1, pageSize: 1 })
@@ -58,12 +57,10 @@ function ServiceRequestsPage() {
 
   const openDocument = (documentIdValue) => {
     setSelectedDocumentId(documentIdValue)
-    setScanRequested(false)
   }
 
   const closeDocument = () => {
     setSelectedDocumentId(null)
-    setScanRequested(false)
   }
 
   return (
@@ -151,8 +148,7 @@ function ServiceRequestsPage() {
           documentId={selectedDocumentId}
           onClose={closeDocument}
           onOpenEmployeeDocuments={setEmployeeId}
-          isScanRequested={scanRequested}
-          onRequestScan={() => setScanRequested(true)}
+
         />
       )}
     </div>
