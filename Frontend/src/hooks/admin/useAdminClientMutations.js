@@ -10,6 +10,7 @@ import {
   updateAdminClientContact,
   deleteAdminClientContact,
   updateAdminClientContactApproval,
+  resendAdminClientInvitation,
 } from '../../api/admin/clients'
 
 /**
@@ -337,6 +338,21 @@ export function useUpdateAdminClientContactApproval() {
     onSuccess: (_data, { clientId }) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'client-contacts', clientId] })
       queryClient.invalidateQueries({ queryKey: ['admin', 'client', clientId], predicate: isCompanyDetail(clientId) })
+    },
+  })
+}
+
+/**
+ * POST /api/v1/admin/clients/{clientId}/contacts/{contactId}/resend-invitation
+ * Refreshes the contacts list so the invitation state is current.
+ */
+export function useResendAdminClientInvitation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ clientId, contactId }) => resendAdminClientInvitation(clientId, contactId),
+    onSuccess: (_data, { clientId }) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'client-contacts', clientId] })
     },
   })
 }

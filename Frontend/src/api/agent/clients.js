@@ -64,3 +64,18 @@ export async function getAgentClientEntities(clientId, params = {}) {
   })
   return response.data.data
 }
+
+/**
+ * Invites a contact for a client assigned to the current Agent.
+ * POST /api/v1/agent/clients/{clientId}/contacts  body: { fullName, email, phone? }
+ * The contact receives an email to set their own password and still needs Admin
+ * approval before signing in. 404 when the client is outside the Agent's scope,
+ * 409 when the email already belongs to an account.
+ */
+export async function inviteAgentClientContact(clientId, payload) {
+  const body = { fullName: payload.fullName, email: payload.email }
+  if (payload.phone) body.phone = payload.phone
+
+  const response = await apiClient.post(`/agent/clients/${clientId}/contacts`, body)
+  return response.data.data
+}

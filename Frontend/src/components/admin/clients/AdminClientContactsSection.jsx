@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Check, Loader2, Plus, Search, Trash2, UserRound, X } from 'lucide-react'
+import { AlertCircle, Check, Loader2, Mail, Plus, Search, Trash2, UserRound, X } from 'lucide-react'
 import { toast } from 'sonner'
 import StatusPill from '../../client/StatusPill'
 import Pagination from '../../client/billing/Pagination'
@@ -8,6 +8,7 @@ import { useAdminClientContacts } from '../../../hooks/admin/useAdminClients'
 import {
   useUpdateAdminClientContact,
   useUpdateAdminClientContactApproval,
+  useResendAdminClientInvitation,
 } from '../../../hooks/admin/useAdminClientMutations'
 import { extractApiErrorMessage } from '../../../utils/apiError'
 import {
@@ -35,15 +36,15 @@ const PAGE_SIZE = 10
  * borrowing the company's vocabulary.
  *
  * ONBOARDING IS THE POINT OF THIS SECTION. A contact is a sign-in account, not a
- * note on a company: it is created with a password the Admin sets, it cannot
+ * note on a company: it is invited by email and sets its own password, it cannot
  * sign in until it is approved, and it is deactivated by deletion. Each of those
  * is a different operation with different consequences, so they are separate
  * controls rather than one "manage" menu, and each is labelled with what it
  * actually does.
  *
- * APPROVE ENABLES THE ACCOUNT, and is not worded as verification. The contact's
- * email was already verified when the account was created, so there is no
- * verification step here and no route for one. What approval does is set
+ * APPROVE ENABLES THE ACCOUNT, and is not worded as verification. The email is
+ * verified when the contact accepts the invitation (shown as "Invitation" in the
+ * row, with a Resend action while pending). What approval does is set
  * IsApproved AND IsActive together, which is why the button says it enables
  * sign-in. It also means approving a contact the Admin has just deactivated will
  * silently switch it back on — the reason the confirm-less inline button is only
@@ -80,6 +81,7 @@ function AdminClientContactsSection({ clientId, onAddContact, onDeleteContact })
 
   const updateContact = useUpdateAdminClientContact()
   const updateApproval = useUpdateAdminClientContactApproval()
+  const resendInvitation = useResendAdminClientInvitation()
 
   // Which contact is mid-flight, so only the affected row is disabled. A pending
   // mutation applies to exactly one row; disabling the whole list would grey out
@@ -126,7 +128,9 @@ function AdminClientContactsSection({ clientId, onAddContact, onDeleteContact })
         onSuccess: () => {
           toast.success(
             approved
-              ? `${presentText(contact?.fullName) ?? 'Contact'} approved. They can now sign in.`
+              ? contact?.emailVerified
+                ? `${presentText(contact?.fullName) ?? 'Contact'} approved. They can now sign in.`
+                : `${presentText(contact?.fullName) ?? 'Contact'} approved. They can sign in once they accept the invitation.`
               : `${presentText(contact?.fullName) ?? 'Contact'} rejected.`,
           )
         },
@@ -136,6 +140,38 @@ function AdminClientContactsSection({ clientId, onAddContact, onDeleteContact })
             approved
               ? 'Unable to approve this contact. Please try again.'
               : 'Unable to reject this contact. Please try again.',
+          )
+          setErrorMessage(message)
+          toast.error(message)
+        },
+        onSettled: () => {
+          setPendingContactId(null)
+          setPendingAction(null)
+        },
+      },
+    )
+  }
+
+  function runResendInvitation(contact) {
+    setErrorMessage(null)
+    const contactName = presentText(contact?.fullName) ?? 'this contact'
+    setPendingContactId(contact?.id)
+    setPendingAction('resend')
+
+    resendInvitation.mutate(
+      { clientId, contactId: contact?.id },
+      {
+        onSuccess: (result) => {
+          if (result?.invitationSent === false) {
+            toast.error(`A new invitation was created for ${contactName}, but the email could not be sent.`)
+          } else {
+            toast.success(`A new invitation was sent to ${contactName}. Earlier links no longer work.`)
+          }
+        },
+        onError: (mutationError) => {
+          const message = extractApiErrorMessage(
+            mutationError,
+            'Unable to resend the invitation. Please try again.',
           )
           setErrorMessage(message)
           toast.error(message)
@@ -188,7 +224,7 @@ function AdminClientContactsSection({ clientId, onAddContact, onDeleteContact })
       className="inline-flex cursor-pointer items-center gap-1.5 rounded-[8px] border border-[#E2E4E9] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#16181D] transition duration-150 hover:bg-[#F7F8FA] focus:outline-none focus:ring-2 focus:ring-[rgba(15,157,116,0.15)]"
     >
       <Plus size={13} strokeWidth={2.5} aria-hidden="true" />
-      Add contact
+      Invite contact
     </button>
   ) : null
 
@@ -250,7 +286,7 @@ function AdminClientContactsSection({ clientId, onAddContact, onDeleteContact })
       emptyDescription={
         hasSearched
           ? `Nothing matches “${appliedSearch}”. The search covers full name and email only.`
-          : 'This contact is created with a password set by the Admin and must be approved before they can sign in.'
+          : 'Invited contacts receive an email to set their password and must be approved before they can sign in.'
       }
       emptyIcon={UserRound}
     >
@@ -304,6 +340,10 @@ function AdminClientContactsSection({ clientId, onAddContact, onDeleteContact })
                 }
                 meta={[
                   { label: 'Phone', value: displayText(contact?.phone) },
+                  {
+                    label: 'Invitation',
+                    value: contact?.emailVerified ? 'Accepted' : 'Pending',
+                  },
                   {
                     label: 'Role',
                     // A free-form string from the backend, not an enum and not
@@ -360,6 +400,23 @@ function AdminClientContactsSection({ clientId, onAddContact, onDeleteContact })
                             <span className="sr-only"> {contactName}</span>
                           </button>
                         </>
+                      )}
+
+                      {!contact?.emailVerified && (
+                        <button
+                          type="button"
+                          onClick={() => runResendInvitation(contact)}
+                          disabled={isRowBusy}
+                          className="inline-flex cursor-pointer items-center gap-1.5 rounded-[8px] border border-[#E2E4E9] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#16181D] transition duration-150 hover:bg-[#F7F8FA] focus:outline-none focus:ring-2 focus:ring-[rgba(15,157,116,0.15)] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isRowPending && pendingAction === 'resend' ? (
+                            <Loader2 size={13} strokeWidth={2.5} className="animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Mail size={13} strokeWidth={2} aria-hidden="true" />
+                          )}
+                          Resend invitation
+                          <span className="sr-only"> to {contactName}</span>
+                        </button>
                       )}
 
                       {/* The only field the contact PATCH actually writes. The

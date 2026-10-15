@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import {
   Building2,
   Mail,
@@ -11,6 +11,8 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
+import { resendVerification } from '../api/auth'
+import { CHANGE_PASSWORD_PATH } from '../auth/ProtectedRoute'
 
 const ROLE_HOME = {
   Client: '/client',
@@ -20,6 +22,19 @@ const ROLE_HOME = {
 
 function resolveRoleDestination(role) {
   return ROLE_HOME[role] ?? '/'
+}
+
+function resolveDestination(user) {
+  return user?.mustChangePassword
+    ? CHANGE_PASSWORD_PATH
+    : resolveRoleDestination(user?.role)
+}
+
+function isEmailNotVerified(error) {
+  return (
+    error?.response?.status === 403 &&
+    /verify your email/i.test(error?.response?.data?.error?.message ?? '')
+  )
 }
 
 function extractErrorMessage(error) {
@@ -40,6 +55,8 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState(null)
+  const [needsVerification, setNeedsVerification] = useState(false)
+  const [verificationNotice, setVerificationNotice] = useState(null)
 
   if (isInitializing) {
     return (
@@ -53,7 +70,7 @@ function Login() {
   }
 
   if (isAuthenticated && user) {
-    return <Navigate to={resolveRoleDestination(user.role)} replace />
+    return <Navigate to={resolveDestination(user)} replace />
   }
 
   async function handleSubmit(event) {
@@ -64,6 +81,8 @@ function Login() {
     }
 
     setError(null)
+    setNeedsVerification(false)
+    setVerificationNotice(null)
 
     const trimmedEmail = email.trim()
     if (!trimmedEmail || !password) {
@@ -75,11 +94,22 @@ function Login() {
 
     try {
       const data = await login({ email: trimmedEmail, password })
-      navigate(resolveRoleDestination(data.data.user.role), { replace: true })
+      navigate(resolveDestination(data.data.user), { replace: true })
     } catch (err) {
       setError(extractErrorMessage(err))
+      setNeedsVerification(isEmailNotVerified(err))
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  async function handleResendVerification() {
+    try {
+      const result = await resendVerification(email.trim())
+      setVerificationNotice(result?.message ?? 'If this account needs verification, a new link has been sent.')
+      setNeedsVerification(false)
+    } catch {
+      setVerificationNotice('Unable to send a new link right now. Please try again later.')
     }
   }
 
@@ -123,7 +153,30 @@ function Login() {
               className="mb-5 flex items-start gap-2.5 rounded-[10px] bg-red-50 p-3 text-sm text-[#DC2626] border border-red-200"
             >
               <AlertCircle className="h-4 w-4 shrink-0 text-[#DC2626] mt-0.5" />
-              <div className="leading-snug font-medium text-xs sm:text-sm">{error}</div>
+              <div className="leading-snug font-medium text-xs sm:text-sm">
+                {error}
+                {needsVerification && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      onClick={handleResendVerification}
+                      className="underline font-semibold cursor-pointer"
+                    >
+                      Send a new verification link
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {verificationNotice && (
+            <div
+              role="status"
+              className="mb-5 rounded-[10px] border border-[#0F9D74]/20 bg-[rgba(15,157,116,0.06)] p-3 text-xs sm:text-sm font-medium text-[#0B7A5A]"
+            >
+              {verificationNotice}
             </div>
           )}
 
@@ -154,12 +207,20 @@ function Login() {
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-[#16181D] mb-1.5"
-              >
-                Password
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label
+                  htmlFor="password"
+                  className="block text-sm font-medium text-[#16181D]"
+                >
+                  Password
+                </label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs font-medium text-[#0F9D74] hover:text-[#0B7A5A] focus:outline-none focus:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#9CA3AF]">
                   <Lock className="h-4 w-4" />

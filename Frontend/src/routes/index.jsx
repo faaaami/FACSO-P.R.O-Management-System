@@ -4,6 +4,11 @@ import ProtectedRoute from '../auth/ProtectedRoute'
 import RoleRoute from '../auth/RoleRoute'
 import { useAuth } from '../auth/AuthContext'
 import Login from '../pages/Login'
+import ForgotPassword from '../pages/auth/ForgotPassword'
+import ResetPassword from '../pages/auth/ResetPassword'
+import VerifyEmail from '../pages/auth/VerifyEmail'
+import AcceptInvitation from '../pages/auth/AcceptInvitation'
+import ChangePasswordRequired from '../pages/auth/ChangePasswordRequired'
 import ClientDashboard from '../pages/client/ClientDashboard'
 import DocumentsPage from '../pages/client/DocumentsPage'
 import ContractsPage from '../pages/client/ContractsPage'
@@ -223,8 +228,17 @@ function AppRoutes() {
       {/* Standalone Login Route */}
       <Route path="/login" element={<Login />} />
 
+      {/* Public account-link pages (opened from emails) */}
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/accept-invitation" element={<AcceptInvitation />} />
+
       {/* Authenticated Application Routes */}
       <Route element={<ProtectedRoute />}>
+        {/* Forced password change for temporary passwords (no shell) */}
+        <Route path="/change-password" element={<ChangePasswordRequired />} />
+
         {/* Shell Layout Routes */}
         <Route element={<AppShell />}>
           <Route path="/" element={<HomeRedirect />} />

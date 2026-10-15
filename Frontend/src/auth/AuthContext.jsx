@@ -1,5 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { login as loginRequest, logout as logoutRequest } from '../api/auth'
+import {
+  login as loginRequest,
+  logout as logoutRequest,
+  refreshSession,
+} from '../api/auth'
 import {
   getAccessToken,
   getRefreshToken,
@@ -79,6 +83,21 @@ export function AuthProvider({ children }) {
     setUser(mergedUser)
   }
 
+  // After a forced password change: fetch a token pair without the
+  // password-change claim and clear the flag on the stored user.
+  async function completePasswordChange() {
+    const tokens = await refreshSession(getRefreshToken())
+    const mergedUser = { ...getUser(), mustChangePassword: false }
+    setAuthSession({
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: mergedUser,
+    })
+    setAccessToken(tokens.accessToken)
+    setUser(mergedUser)
+    return mergedUser
+  }
+
   const isAuthenticated = Boolean(accessToken && user)
 
   const value = {
@@ -89,6 +108,7 @@ export function AuthProvider({ children }) {
     login,
     logout,
     updateUser,
+    completePasswordChange,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

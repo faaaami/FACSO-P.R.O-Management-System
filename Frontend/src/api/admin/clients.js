@@ -340,32 +340,24 @@ export async function deleteAdminClientEntity(clientId, entityId) {
  *   — clientCompanyId comes from the route.
  *
  * Validation: fullName required max 200, email required + valid + max 255, phone
- * optional max 30. Note the email cap is 255 here against 320 on the company
- * DTO; the form follows the stricter of the two. password is REQUIRED, min 8,
- * max 100.
+ * optional max 30.
  *
- * EMAIL UNIQUENESS IS GLOBAL, NOT PER COMPANY. The handler checks the address
- * against every non-deleted User, so a contact whose email matches an existing
- * agent, staff account or other contact is rejected with 409 however unrelated
- * the company. That is a real constraint on the Admin workflow, and it is why
- * this can fail on a field the user cannot see a conflict for.
+ * THERE IS NO PASSWORD. The contact receives an invitation email and sets their
+ * own password through a single-use link (72 hours by default). They still need
+ * Admin approval before they can sign in.
  *
- * `password` is the Admin's own chosen value and travels one way: it is hashed by
- * the server, never stored or returned in plaintext, never audited, never
- * emailed, and never cached here. The Admin shares it with the client directly.
+ * EMAIL UNIQUENESS IS GLOBAL, NOT PER COMPANY: an address already used by any
+ * non-deleted user is rejected with 409.
  *
- * The response is CreateClientContactResponseDto and it carries NO credential:
- *
- *   { id, clientCompanyId, fullName, email, phone, role, isActive, isApproved }
- *
- * `role` is always Client, `isApproved` is always false and the account is
- * created EmailVerified.
+ * Response: { id, clientCompanyId, fullName, email, phone, role, isActive,
+ * isApproved, invitationSent, invitationExpiresAt }. `invitationSent` is false
+ * when the email could not be delivered; the contact exists and the invitation
+ * can be resent.
  */
 export async function createAdminClientContact(clientId, payload) {
   const body = {
     fullName: payload.fullName,
     email: payload.email,
-    password: payload.password,
   }
   if (payload.phone) body.phone = payload.phone
 
@@ -450,6 +442,18 @@ export async function updateAdminClientContactApproval(clientId, contactId, appr
   const response = await apiClient.patch(
     `/admin/clients/${clientId}/contacts/${contactId}/approval`,
     { approved },
+  )
+  return response.data.data
+}
+
+/**
+ * POST /api/v1/admin/clients/{clientId}/contacts/{contactId}/resend-invitation
+ * Issues a new invitation link; earlier links stop working. 409 when the contact
+ * has already set a password. Returns { contactId, invitationSent, invitationExpiresAt }.
+ */
+export async function resendAdminClientInvitation(clientId, contactId) {
+  const response = await apiClient.post(
+    `/admin/clients/${clientId}/contacts/${contactId}/resend-invitation`,
   )
   return response.data.data
 }

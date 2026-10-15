@@ -8,7 +8,10 @@ import {
 } from '../auth/storage'
 
 const apiClient = axios.create({
-  baseURL: 'https://localhost:7280/api/v1',
+  // Same-origin by default: Vite proxies /api in development and the
+  // production web server serves the API under /api. Override with
+  // VITE_API_BASE_URL when the API lives on another origin.
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
@@ -17,12 +20,13 @@ const apiClient = axios.create({
 
 const AUTH_PATHS = [
   '/auth/login',
-  '/auth/register',
   '/auth/refresh',
   '/auth/logout',
   '/auth/verify-email',
   '/auth/forgot-password',
   '/auth/reset-password',
+  '/auth/resend-verification',
+  '/auth/accept-invitation',
 ]
 
 function isAuthRequest(url) {
@@ -81,6 +85,15 @@ function performRefresh() {
   return refreshPromise
 }
 
+const CHANGE_PASSWORD_PATH = '/change-password'
+
+function isPasswordChangeRequired(error) {
+  return (
+    error?.response?.status === 403 &&
+    error?.response?.data?.error?.code === 'PASSWORD_CHANGE_REQUIRED'
+  )
+}
+
 function redirectToLogin() {
   if (redirectingToLogin) {
     return
@@ -95,6 +108,15 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const { config, response } = error
+
+    // The server refuses everything except changing the password until the
+    // account's temporary password has been replaced.
+    if (isPasswordChangeRequired(error)) {
+      if (!window.location.pathname.startsWith(CHANGE_PASSWORD_PATH)) {
+        window.location.assign(CHANGE_PASSWORD_PATH)
+      }
+      return Promise.reject(error)
+    }
 
     if (!config || !response || response.status !== 401) {
       return Promise.reject(error)

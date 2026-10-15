@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2,
@@ -10,6 +11,7 @@ import {
   Mail,
   MapPin,
   Phone,
+  UserPlus,
   Users,
 } from 'lucide-react'
 import Drawer from '../../client/documents/Drawer'
@@ -18,6 +20,8 @@ import ErrorState from '../../client/ErrorState'
 import StatusPill from '../../client/StatusPill'
 import AgentClientEntitiesSection from './AgentClientEntitiesSection'
 import { useAgentClient } from '../../../hooks/agent/useAgentClient'
+import { useInviteAgentClientContact } from '../../../hooks/agent/useInviteAgentClientContact'
+import ClientContactInviteDialog from '../../shared/ClientContactInviteDialog'
 import { extractApiErrorMessage } from '../../../utils/apiError'
 import { formatDate } from '../documents/documentDisplay'
 
@@ -49,6 +53,8 @@ function AgentClientDetailDrawer({ clientId, onClose }) {
   const navigate = useNavigate()
   const { data: client, isLoading, isError, error, refresh } =
     useAgentClient(clientId)
+  const inviteContact = useInviteAgentClientContact()
+  const [isInviteOpen, setIsInviteOpen] = useState(false)
 
   const drillDowns = [
     { label: 'Employees', path: '/employees', icon: Users },
@@ -119,6 +125,25 @@ function AgentClientDetailDrawer({ clientId, onClose }) {
               value={String(client.id).slice(0, 8)}
               mono
             />
+          </div>
+        </div>
+
+        <div className="rounded-[10px] border border-[#E2E4E9] bg-[#F7F8FA]/70 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-[#16181D]">Client portal access</p>
+              <p className="mt-0.5 text-[11px] text-[#6B7280]">
+                Invite a person from this company. They set their own password; an Admin approves the account.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsInviteOpen(true)}
+              className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-[8px] border border-[#E2E4E9] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#16181D] transition duration-150 hover:bg-[#F7F8FA] focus:outline-none focus:ring-2 focus:ring-[rgba(15,157,116,0.15)]"
+            >
+              <UserPlus size={13} strokeWidth={2} aria-hidden="true" />
+              Invite contact
+            </button>
           </div>
         </div>
 
@@ -233,6 +258,14 @@ function AgentClientDetailDrawer({ clientId, onClose }) {
       onClose={onClose}
     >
       {content}
+      {isInviteOpen && client && (
+        <ClientContactInviteDialog
+          clientId={client.id}
+          onClose={() => setIsInviteOpen(false)}
+          onCreated={() => setIsInviteOpen(false)}
+          createContact={inviteContact}
+        />
+      )}
     </Drawer>
   )
 }
