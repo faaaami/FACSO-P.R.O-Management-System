@@ -1035,11 +1035,11 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime>("DueDate")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date");
 
-                    b.Property<DateTime>("InvoiceDate")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<DateOnly>("InvoiceDate")
+                        .HasColumnType("date");
 
                     b.Property<string>("InvoiceNumber")
                         .IsRequired()
@@ -1056,11 +1056,11 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Property<DateTime?>("PaidAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime?>("PeriodEnd")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<DateOnly?>("PeriodEnd")
+                        .HasColumnType("date");
 
-                    b.Property<DateTime?>("PeriodStart")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<DateOnly?>("PeriodStart")
+                        .HasColumnType("date");
 
                     b.Property<Guid>("ServiceContractId")
                         .HasColumnType("uuid");
@@ -1113,8 +1113,8 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime?>("EndDate")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
@@ -1123,8 +1123,8 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
-                    b.Property<DateTime>("StartDate")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -1176,11 +1176,11 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasMaxLength(5000)
                         .HasColumnType("character varying(5000)");
 
-                    b.Property<DateTime>("DueDate")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date");
 
-                    b.Property<DateTime>("InvoiceDate")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<DateOnly>("InvoiceDate")
+                        .HasColumnType("date");
 
                     b.Property<string>("InvoiceNumber")
                         .IsRequired()
