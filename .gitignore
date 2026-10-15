@@ -25,14 +25,24 @@ TestResults/
 # Node / React / Vite
 # ==============================
 
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
+node_modules/
+Frontend/dist/
+Frontend/.vite/
 
-# Environment files
-frontend/.env
-frontend/.env.*
-!frontend/.env.example
+# Environment files (any folder)
+.env
+.env.*
+!.env.example
+
+# ==============================
+# Secrets / certificates
+# ==============================
+
+secrets.json
+*.pfx
+*.p12
+*.pem
+*.key
 
 # ==============================
 # OS files
