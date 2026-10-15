@@ -33,6 +33,10 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
     protected DatabaseFixture Fixture => _fixture;
 
+    /// <summary>Emails sent by the shared host (see <see cref="AuthClient"/>).</summary>
+    protected CapturingEmailSender Emails =>
+        Factory.Services.GetRequiredService<CapturingEmailSender>();
+
     /// <summary>Client authenticated via the TestIdentity scheme.</summary>
     protected HttpClient ScopeClient { get; private set; } = null!;
 
@@ -44,6 +48,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
     public virtual async Task InitializeAsync()
     {
         FakeRazorpayService.ResetCreateOrderTracking();
+        Emails.Clear();
 
         await ResetDatabaseAsync();
         await SeedAsync();

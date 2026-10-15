@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Infrastructure.Email;
 using PROManagementSystem.Tests.Extraction;
@@ -8,163 +8,126 @@ using Xunit;
 namespace PROManagementSystem.Tests.Security;
 
 /// <summary>
-/// Regression coverage for audit finding H1: the development email service
-/// must never write verification tokens, password-reset tokens, or temporary
-/// passwords to the application log in any environment.
+/// Regression coverage for audit finding H1: account tokens (verification,
+/// password reset, invitation) must never be written to the application log,
+/// while the emails themselves must carry them as working links.
 /// </summary>
 public sealed class EmailSecretLoggingTests
 {
-    private const string VerificationToken =
-        "SENTINEL-VERIFICATION-TOKEN-8f3a1c";
-    private const string ResetToken =
-        "SENTINEL-RESET-TOKEN-1b2c9d";
-    private const string TemporaryPassword =
-        "SENTINEL-TEMP-PASSWORD-9d4e7f";
+    private const string VerificationToken = "SENTINEL-VERIFICATION-TOKEN-8f3a1c";
+    private const string ResetToken = "SENTINEL-RESET-TOKEN-1b2c9d";
+    private const string InvitationToken = "SENTINEL-INVITATION-TOKEN-4e5f6a";
     private const string Recipient = "client@example.test";
+    private const string FrontendBaseUrl = "https://portal.example.test/";
 
-    private static CapturingLogger<DevelopmentEmailService> NewLogger()
-        => new();
+    private static EmailService NewEmailService(IEmailSender sender)
+        => new(
+            sender,
+            Options.Create(new AppUrlOptions { FrontendBaseUrl = FrontendBaseUrl }),
+            TimeProvider.System);
 
-    private static void AssertNoSecret(
-        CapturingLogger<DevelopmentEmailService> logger,
-        string secret)
-        => Assert.DoesNotContain(
-            logger.Entries,
-            entry => entry.Contains(secret, StringComparison.Ordinal));
-
-    [Fact(DisplayName =
-        "H1: verification token is never written to the log")]
-    public async Task VerificationToken_IsNotLogged()
+    private static async Task SendAllAsync(IEmailService service)
     {
-        var logger = NewLogger();
-        var service = new DevelopmentEmailService(logger);
+        var expires = DateTime.UtcNow.AddHours(1);
 
         await service.SendEmailVerificationAsync(
-            Recipient,
-            VerificationToken);
-
-        AssertNoSecret(logger, VerificationToken);
-    }
-
-    [Fact(DisplayName =
-        "H1: password-reset token is never written to the log")]
-    public async Task ResetToken_IsNotLogged()
-    {
-        var logger = NewLogger();
-        var service = new DevelopmentEmailService(logger);
-
+            Recipient, "Invited User", VerificationToken, expires);
         await service.SendPasswordResetAsync(
-            Recipient,
-            ResetToken);
-
-        AssertNoSecret(logger, ResetToken);
+            Recipient, "Invited User", ResetToken, expires);
+        await service.SendClientInvitationAsync(
+            Recipient, "Invited User", "Company A", InvitationToken, expires);
     }
 
     [Fact(DisplayName =
-        "H1: the client invitation carries no credential at all")]
-    public async Task ClientInvitation_AcceptsNoCredential()
+        "H1: the Development log-only sender never writes a token to the log")]
+    public async Task LoggingSender_NeverLogsTokens()
     {
-        var logger = NewLogger();
-        var service = new DevelopmentEmailService(logger);
+        var logger = new CapturingLogger<LoggingEmailSender>();
 
-        await service.SendClientInvitationAsync(
-            Recipient,
-            "Invited User");
-
-        // The invitation no longer has a password parameter, so there is
-        // nothing this call can leak. The Admin-typed value is also asserted
-        // absent in case a future overload reintroduces one.
-        AssertNoSecret(logger, TemporaryPassword);
-    }
-
-    [Fact(DisplayName =
-        "H1: development email simulation still records a non-secret entry")]
-    public async Task NormalBehaviour_StillRecordsNonSecretEntry()
-    {
-        var logger = NewLogger();
-        var service = new DevelopmentEmailService(logger);
-
-        await service.SendEmailVerificationAsync(
-            Recipient,
-            VerificationToken);
-        await service.SendPasswordResetAsync(
-            Recipient,
-            ResetToken);
-        await service.SendClientInvitationAsync(
-            Recipient,
-            "Invited User");
+        await SendAllAsync(NewEmailService(new LoggingEmailSender(logger)));
 
         Assert.Equal(3, logger.Entries.Count);
-        Assert.All(
-            logger.Entries,
-            entry => Assert.Contains(
-                Recipient,
-                entry,
-                StringComparison.Ordinal));
-
-        AssertNoSecret(logger, VerificationToken);
-        AssertNoSecret(logger, ResetToken);
-        AssertNoSecret(logger, TemporaryPassword);
+        Assert.All(logger.Entries, entry =>
+        {
+            Assert.Contains(Recipient, entry, StringComparison.Ordinal);
+            Assert.DoesNotContain(VerificationToken, entry, StringComparison.Ordinal);
+            Assert.DoesNotContain(ResetToken, entry, StringComparison.Ordinal);
+            Assert.DoesNotContain(InvitationToken, entry, StringComparison.Ordinal);
+        });
     }
 
     [Fact(DisplayName =
-        "H1: every log level stays enabled yet no secret is emitted " +
-        "(environment-independent guarantee)")]
-    public async Task NoSecret_Emitted_AtAnyLogLevel()
+        "Emails carry each token in a link to the matching frontend page")]
+    public async Task Emails_LinkToTheFrontendWithTheToken()
     {
-        var logger = NewLogger();
-        var service = new DevelopmentEmailService(logger);
+        var sender = new CapturingEmailSender();
 
-        Assert.True(logger.IsEnabled(Microsoft.Extensions.Logging
-            .LogLevel.Trace));
-        Assert.True(logger.IsEnabled(Microsoft.Extensions.Logging
-            .LogLevel.Critical));
+        await SendAllAsync(NewEmailService(sender));
 
-        await service.SendEmailVerificationAsync(Recipient, VerificationToken);
-        await service.SendPasswordResetAsync(Recipient, ResetToken);
-        await service.SendClientInvitationAsync(
+        Assert.Equal(
+            VerificationToken,
+            sender.LatestToken(Recipient, "verify-email"));
+        Assert.Equal(
+            ResetToken,
+            sender.LatestToken(Recipient, "reset-password"));
+        Assert.Equal(
+            InvitationToken,
+            sender.LatestToken(Recipient, "accept-invitation"));
+
+        Assert.All(sender.Messages, message =>
+        {
+            Assert.Contains("https://portal.example.test/", message.TextBody);
+            Assert.DoesNotContain("//reset", message.TextBody);
+        });
+    }
+
+    [Fact(DisplayName = "Email names are HTML-encoded in the HTML body")]
+    public async Task Html_IsEncoded()
+    {
+        var sender = new CapturingEmailSender();
+
+        await NewEmailService(sender).SendClientInvitationAsync(
             Recipient,
-            "Invited User");
+            "<script>alert(1)</script>",
+            "A & B Trading",
+            InvitationToken,
+            DateTime.UtcNow.AddHours(72));
 
-        Assert.All(
-            logger.Entries,
-            entry =>
-            {
-                Assert.DoesNotContain(
-                    VerificationToken, entry, StringComparison.Ordinal);
-                Assert.DoesNotContain(
-                    ResetToken, entry, StringComparison.Ordinal);
-                Assert.DoesNotContain(
-                    TemporaryPassword, entry, StringComparison.Ordinal);
-            });
+        var html = Assert.Single(sender.Messages).HtmlBody;
+
+        Assert.DoesNotContain("<script>", html);
+        Assert.Contains("A &amp; B Trading", html);
     }
 }
 
-/// <summary>
-/// Locks in that the <see cref="IEmailService"/> registration consumed by the
-/// real host (and therefore by any environment) resolves to the same
-/// secret-free implementation.
-/// </summary>
-[Collection(DatabaseCollection.Name)]
-public sealed class EmailServiceRegistrationTests
+public sealed class EmailSenderSelectionTests
 {
-    private readonly DatabaseFixture _fixture;
+    private static readonly SmtpOptions Unconfigured = new();
 
-    public EmailServiceRegistrationTests(DatabaseFixture fixture)
+    private static readonly SmtpOptions Configured = new()
     {
-        _fixture = fixture;
-    }
+        Host = "smtp.example.test",
+        FromAddress = "noreply@example.test"
+    };
 
     [Fact(DisplayName =
-        "H1: the registered IEmailService is the secret-free " +
-        "DevelopmentEmailService")]
-    public void RegisteredEmailService_IsDevelopmentEmailService()
-    {
-        using var scope = _fixture.Factory.Services.CreateScope();
+        "Development without SMTP uses the log-only sender")]
+    public void Development_WithoutSmtp_UsesLoggingSender()
+        => Assert.Equal(
+            typeof(LoggingEmailSender),
+            EmailSenderSelection.Select(isDevelopment: true, Unconfigured));
 
-        var emailService = scope.ServiceProvider
-            .GetRequiredService<IEmailService>();
+    [Theory(DisplayName = "Configured SMTP is used in every environment")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ConfiguredSmtp_IsUsed(bool isDevelopment)
+        => Assert.Equal(
+            typeof(SmtpEmailSender),
+            EmailSenderSelection.Select(isDevelopment, Configured));
 
-        Assert.IsType<DevelopmentEmailService>(emailService);
-    }
+    [Fact(DisplayName =
+        "Outside Development, missing SMTP fails instead of silently logging")]
+    public void Production_WithoutSmtp_Throws()
+        => Assert.Throws<InvalidOperationException>(
+            () => EmailSenderSelection.Select(isDevelopment: false, Unconfigured));
 }

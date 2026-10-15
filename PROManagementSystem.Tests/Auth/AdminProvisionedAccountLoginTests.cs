@@ -24,9 +24,8 @@ public class AdminProvisionedAccountLoginTests : IntegrationTestBase
 
     private const string StaffPassword = "ProvisionedStaffPw1!";
 
-    // The Admin chooses the contact password, so the test already holds it.
-    // Nothing is returned at creation and nothing has to be scraped out of a
-    // response to attempt the login.
+    // The contact chooses this password through the invitation link; the
+    // helper below follows the emailed link exactly as the contact would.
     private const string ContactPassword = "ProvisionedContactPw1!";
 
     private const string NewStaffEmail =
@@ -134,8 +133,7 @@ public class AdminProvisionedAccountLoginTests : IntegrationTestBase
             {
                 fullName = "Provisioned Contact",
                 email,
-                phone = "+910000000002",
-                password
+                phone = "+910000000002"
             },
             adminToken));
 
@@ -145,6 +143,16 @@ public class AdminProvisionedAccountLoginTests : IntegrationTestBase
             ApiResponse<CreateClientContactResponseDto>>(response);
 
         Assert.NotNull(envelope?.Data);
+
+        // Accept the emailed invitation, setting the contact's password.
+        var token = Emails.LatestToken(email, "accept-invitation");
+        Assert.False(string.IsNullOrEmpty(token));
+
+        var accepted = await AuthClient.PostAsJsonAsync(
+            "/api/v1/auth/accept-invitation",
+            new { token, newPassword = password });
+
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
 
         return envelope!.Data;
     }
@@ -294,8 +302,8 @@ public class AdminProvisionedAccountLoginTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "Client contact can log in after approval using the password the " +
-        "Admin chose at creation")]
+        "Client contact can log in after approval using the password set " +
+        "from the invitation")]
     public async Task ClientContact_AfterApproval_CanLogIn()
     {
         var adminToken = await LoginAsAdminAsync();
@@ -325,8 +333,8 @@ public class AdminProvisionedAccountLoginTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "Admin-provisioned accounts are created email-verified while the " +
-        "approval gate is preserved")]
+        "Admin-provisioned accounts are email-verified (contacts once they " +
+        "accept the invitation) while the approval gate is preserved")]
     public async Task CreatedAccounts_AreEmailVerified()
     {
         var adminToken = await LoginAsAdminAsync();

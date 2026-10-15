@@ -22,7 +22,8 @@ public sealed class AuthenticationRateLimitingTests : IntegrationTestBase
     private const int PermitLimit = 3;
 
     private const string LoginPath = "/api/v1/auth/login";
-    private const string RegisterPath = "/api/v1/auth/register";
+    private const string AcceptInvitationPath = "/api/v1/auth/accept-invitation";
+    private const string ResendVerificationPath = "/api/v1/auth/resend-verification";
     private const string ForgotPasswordPath = "/api/v1/auth/forgot-password";
     private const string ResetPasswordPath = "/api/v1/auth/reset-password";
     private const string VerifyEmailPath = "/api/v1/auth/verify-email";
@@ -142,17 +143,21 @@ public sealed class AuthenticationRateLimitingTests : IntegrationTestBase
             LoginPath,
             _ => new { email = UnknownEmail, password = ProbePassword });
 
-    [Fact(DisplayName = "H2: register is rate limited")]
-    public Task Register_IsRateLimited()
+    [Fact(DisplayName = "H2: accept-invitation is rate limited")]
+    public Task AcceptInvitation_IsRateLimited()
         => AssertEndpointIsRateLimitedAsync(
-            RegisterPath,
+            AcceptInvitationPath,
             _ => new
             {
-                fullName = "Rate Limit Probe",
-                email = $"rate-limit-{Guid.NewGuid():N}@test.local",
-                password = ProbePassword,
-                phone = (string?)null
+                token = "not-a-real-token",
+                newPassword = ProbePassword
             });
+
+    [Fact(DisplayName = "H2: resend-verification is rate limited")]
+    public Task ResendVerification_IsRateLimited()
+        => AssertEndpointIsRateLimitedAsync(
+            ResendVerificationPath,
+            _ => new { email = UnknownEmail });
 
     [Fact(DisplayName = "H2: forgot-password is rate limited")]
     public Task ForgotPassword_IsRateLimited()

@@ -319,34 +319,6 @@ public class AuditLogCoverageTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "Public registration writes a UserRegistered audit with no actor")]
-    public async Task Register_WritesUserRegisteredAudit()
-    {
-        var response = await AuthClient.PostAsJsonAsync(
-            "/api/v1/auth/register",
-            new
-            {
-                fullName = "Brand New Client",
-                email = $"new-{Guid.NewGuid():N}@test.local",
-                password = TestDataSeeder.TestLoginPassword,
-                phone = "0501234567"
-            });
-
-        await EnsureOk(response, HttpStatusCode.OK);
-
-        var node = JsonNode.Parse(
-            await response.Content.ReadAsStringAsync())!;
-
-        var userId = GuidOf(node, "id");
-
-        var audits = await FindAuditsAsync(
-            "UserRegistered", userId);
-
-        Assert.Single(audits);
-        Assert.Null(audits[0].UserId);
-    }
-
-    [Fact(DisplayName =
         "Email verification writes an EmailVerified audit with no actor")]
     public async Task VerifyEmail_WritesEmailVerifiedAudit()
     {

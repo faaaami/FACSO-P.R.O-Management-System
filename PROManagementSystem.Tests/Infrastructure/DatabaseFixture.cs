@@ -168,6 +168,12 @@ internal sealed class TestApplicationFactory : WebApplicationFactory<Program>
             // so client create-order tests never hit the network.
             services.AddScoped<IRazorpayService, FakeRazorpayService>();
 
+            // Capture account emails (invitations, resets, verification) so
+            // tests can follow the emailed links without an SMTP server.
+            services.AddSingleton<CapturingEmailSender>();
+            services.AddSingleton<IEmailSender>(
+                provider => provider.GetRequiredService<CapturingEmailSender>());
+
             // The app registers NpgsqlDataSource at provider-build time from
             // configuration; ensure it points at the test container so the
             // Dapper-backed read repositories see the seeded data.
