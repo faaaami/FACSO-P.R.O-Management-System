@@ -9,12 +9,12 @@ public interface IInvoicePdfService
 
 public sealed record InvoicePdfModel(
     string InvoiceNumber,
-    DateTime InvoiceDate,
-    DateTime DueDate,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
     string ClientCompanyName,
     string? ContractNumber,
-    DateTime? PeriodStart,
-    DateTime? PeriodEnd,
+    DateOnly? PeriodStart,
+    DateOnly? PeriodEnd,
     decimal Amount,
     string Currency,
     string Status,

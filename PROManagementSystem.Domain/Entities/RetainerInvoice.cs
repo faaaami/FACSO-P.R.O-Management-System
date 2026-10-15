@@ -15,13 +15,13 @@ public sealed class RetainerInvoice : BaseEntity
 
     public string InvoiceNumber { get; set; } = string.Empty;
 
-    public DateTime InvoiceDate { get; set; }
+    public DateOnly InvoiceDate { get; set; }
 
-    public DateTime DueDate { get; set; }
+    public DateOnly DueDate { get; set; }
 
-    public DateTime? PeriodStart { get; set; }
+    public DateOnly? PeriodStart { get; set; }
 
-    public DateTime? PeriodEnd { get; set; }
+    public DateOnly? PeriodEnd { get; set; }
 
     public decimal Amount { get; set; }
 

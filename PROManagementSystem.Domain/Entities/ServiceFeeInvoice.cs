@@ -15,9 +15,9 @@ public sealed class ServiceFeeInvoice : BaseEntity
 
     public string InvoiceNumber { get; set; } = string.Empty;
 
-    public DateTime InvoiceDate { get; set; }
+    public DateOnly InvoiceDate { get; set; }
 
-    public DateTime DueDate { get; set; }
+    public DateOnly DueDate { get; set; }
 
     public decimal Amount { get; set; }
 

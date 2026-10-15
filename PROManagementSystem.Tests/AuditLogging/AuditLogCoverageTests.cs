@@ -686,8 +686,8 @@ public class AuditLogCoverageTests : IntegrationTestBase
                 clientCompanyId = CompanyA,
                 renewalTaskId = taskId,
                 invoiceNumber = $"INV-SF-TEST-{Guid.NewGuid():N}",
-                invoiceDate = "2026-09-01T00:00:00Z",
-                dueDate = "2026-10-01T00:00:00Z",
+                invoiceDate = "2026-09-01",
+                dueDate = "2026-10-01",
                 amount = 150m,
                 currency = "AED",
                 description = "Test invoice."
@@ -888,7 +888,7 @@ public class AuditLogCoverageTests : IntegrationTestBase
             new
             {
                 contractNumber = "CT-A-002",
-                startDate = "2026-09-01T00:00:00Z",
+                startDate = "2026-09-01",
                 retainerAmount = 1000m,
                 terms = "Renewed terms."
             });

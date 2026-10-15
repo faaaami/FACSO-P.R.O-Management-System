@@ -5,7 +5,7 @@ namespace PROManagementSystem.Application.Contracts.Commands.CreateServiceContra
 public sealed record CreateServiceContractCommand(
     Guid ClientCompanyId,
     string ContractNumber,
-    DateTime StartDate,
+    DateOnly StartDate,
     decimal RetainerAmount,
     string? Terms
 ) : IRequest<CreateServiceContractResponseDto>;

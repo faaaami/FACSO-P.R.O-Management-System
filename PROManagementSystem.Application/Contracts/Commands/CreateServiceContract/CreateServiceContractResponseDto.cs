@@ -6,8 +6,8 @@ public sealed record CreateServiceContractResponseDto(
     Guid Id,
     Guid ClientCompanyId,
     string ContractNumber,
-    DateTime StartDate,
-    DateTime? EndDate,
+    DateOnly StartDate,
+    DateOnly? EndDate,
     ServiceContractStatus Status,
     decimal RetainerAmount,
     string? Terms

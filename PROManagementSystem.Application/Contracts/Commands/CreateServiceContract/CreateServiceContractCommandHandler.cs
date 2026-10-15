@@ -87,7 +87,7 @@ public sealed class CreateServiceContractCommandHandler
                 ServiceContractStatus.Ended;
 
             activeContract.EndDate =
-                now;
+                DateOnly.FromDateTime(now);
 
             activeContract.UpdatedAt =
                 now;

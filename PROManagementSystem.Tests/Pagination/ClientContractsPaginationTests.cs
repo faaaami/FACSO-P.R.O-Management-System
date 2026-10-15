@@ -64,18 +64,18 @@ public class ClientContractsPaginationTests : IntegrationTestBase
                     Guid.Parse("00000000-0000-0000-0000-900000000001"),
                     TestDataSeeder.Ids.CompanyA,
                     "CT-A-901",
-                    now.AddDays(-10)),
+                    DateOnly.FromDateTime(now.AddDays(-10))),
                 Contract(
                     Guid.Parse("00000000-0000-0000-0000-900000000002"),
                     TestDataSeeder.Ids.CompanyA,
                     "CT-A-902",
-                    now.AddDays(-50)));
+                    DateOnly.FromDateTime(now.AddDays(-50))));
             db.SaveChanges();
         });
     }
 
     private static ServiceContract Contract(
-        Guid id, Guid companyId, string contractNumber, DateTime startDate)
+        Guid id, Guid companyId, string contractNumber, DateOnly startDate)
         => new()
         {
             Id = id,

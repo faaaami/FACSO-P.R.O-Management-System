@@ -5,8 +5,8 @@ namespace PROManagementSystem.Application.Tasks.Queries.GetAgentServiceFeeInvoic
 public sealed record GetAgentServiceFeeInvoiceResponseDto(
     Guid Id,
     string InvoiceNumber,
-    DateTime InvoiceDate,
-    DateTime DueDate,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
     decimal Amount,
     string Currency,
     ServiceFeeInvoiceStatus Status,

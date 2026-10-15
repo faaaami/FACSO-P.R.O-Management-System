@@ -37,6 +37,7 @@ using PROManagementSystem.Infrastructure.Identity;
 using PROManagementSystem.Infrastructure.Persistence;
 using PROManagementSystem.Infrastructure.Persistence.Repositories;
 using PROManagementSystem.Infrastructure.Persistence.Seeders;
+using PROManagementSystem.Infrastructure.Persistence.Sql;
 using PROManagementSystem.Infrastructure.Pdf;
 using PROManagementSystem.Infrastructure.Storage;
 using Serilog;
@@ -93,6 +94,10 @@ builder.Services.AddHangfireServer();
 // ========================================
 // Dapper
 // ========================================
+
+// Map PostgreSQL `date` columns to DateOnly for the Dapper read
+// repositories (contracts and invoices).
+DapperDateOnlyTypeHandlers.EnsureRegistered();
 
 builder.Services.AddSingleton(
     NpgsqlDataSource.Create(

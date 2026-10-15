@@ -2,7 +2,7 @@
 
 public sealed record CreateServiceContractRequest(
     string ContractNumber,
-    DateTime StartDate,
+    DateOnly StartDate,
     decimal RetainerAmount,
     string? Terms
 );

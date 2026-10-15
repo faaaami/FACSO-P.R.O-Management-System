@@ -219,11 +219,8 @@ public class MockClientDatasetTests : IntegrationTestBase
             Assert.Equal(CompanyF, contract.ClientCompanyId);
             Assert.Equal(PROManagementSystem.Domain.Enums.ServiceContractStatus.Active, contract.Status);
             Assert.Equal(1000m, contract.RetainerAmount);
-            Assert.Equal(
-                new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-                contract.StartDate);
-            Assert.Equal(contract.EndDate,
-                new DateTime(2026, 12, 31, 23, 59, 59, DateTimeKind.Utc));
+            Assert.Equal(new DateOnly(2026, 1, 1), contract.StartDate);
+            Assert.Equal(new DateOnly(2026, 12, 31), contract.EndDate);
             Assert.False(string.IsNullOrWhiteSpace(contract.Terms));
         });
     }

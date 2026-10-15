@@ -114,8 +114,8 @@ public class ServiceFeeInvoicePaidTests : IntegrationTestBase
                 InvoiceNumber =
                     invoiceNumber ??
                     $"SFI-T-{invoiceId.ToString("N")[..10]}",
-                InvoiceDate = now,
-                DueDate = now.AddDays(30),
+                InvoiceDate = DateOnly.FromDateTime(now),
+                DueDate = DateOnly.FromDateTime(now.AddDays(30)),
                 Amount = Amount,
                 Currency = "AED",
                 Status = status,

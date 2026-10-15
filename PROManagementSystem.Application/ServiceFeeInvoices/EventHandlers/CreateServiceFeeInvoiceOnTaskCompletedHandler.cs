@@ -72,7 +72,7 @@ public sealed class CreateServiceFeeInvoiceOnTaskCompletedHandler
         var invoiceNumber =
             $"SFI-{DateTime.UtcNow:yyyyMMdd}-{task.Id.ToString()[..8].ToUpper()}";
 
-        var now = DateTime.UtcNow;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         try
         {
@@ -82,8 +82,8 @@ public sealed class CreateServiceFeeInvoiceOnTaskCompletedHandler
                     notification.RenewalTaskId,
                     task.ServiceFeeAmount.Value,
                     "AED",
-                    now,
-                    now.AddDays(30),
+                    today,
+                    today.AddDays(30),
                     invoiceNumber,
                     $"Service fee for completed renewal task {task.Id}.",
                     cancellationToken);

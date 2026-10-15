@@ -4,8 +4,8 @@ public sealed record CreateServiceFeeInvoiceRequest(
     Guid ClientCompanyId,
     Guid RenewalTaskId,
     string InvoiceNumber,
-    DateTime InvoiceDate,
-    DateTime DueDate,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
     decimal Amount,
     string Currency,
     string? Description

@@ -9,8 +9,8 @@ public interface IServiceFeeInvoiceCreationService
         Guid renewalTaskId,
         decimal amount,
         string currency,
-        DateTime invoiceDate,
-        DateTime dueDate,
+        DateOnly invoiceDate,
+        DateOnly dueDate,
         string invoiceNumber,
         string? description,
         CancellationToken cancellationToken);

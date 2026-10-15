@@ -4,8 +4,8 @@ namespace PROManagementSystem.Application.Contracts.Commands.UpdateServiceContra
 
 public sealed record UpdateServiceContractCommand(
     Guid Id,
-    DateTime StartDate,
-    DateTime? EndDate,
+    DateOnly StartDate,
+    DateOnly? EndDate,
     decimal RetainerAmount,
     string? Terms
 ) : IRequest<UpdateServiceContractResponseDto>;

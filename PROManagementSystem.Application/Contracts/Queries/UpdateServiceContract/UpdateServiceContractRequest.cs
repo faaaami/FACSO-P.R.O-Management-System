@@ -1,8 +1,8 @@
 ﻿namespace PROManagementSystem.Application.Contracts.Commands.UpdateServiceContract;
 
 public sealed record UpdateServiceContractRequest(
-    DateTime StartDate,
-    DateTime? EndDate,
+    DateOnly StartDate,
+    DateOnly? EndDate,
     decimal RetainerAmount,
     string? Terms
 );
