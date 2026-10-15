@@ -61,6 +61,7 @@ public sealed class ChangePasswordCommandHandler
             _passwordHasher.Hash(request.NewPassword);
 
         user.PasswordHash = newPasswordHash;
+        user.MustChangePassword = false;
         user.UpdatedAt = DateTime.UtcNow;
 
         var auditLog = new Domain.Entities.AuditLog

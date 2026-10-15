@@ -15,7 +15,9 @@ public sealed class ChangePasswordCommandValidator
             .NotEmpty()
             .WithMessage("New password is required.")
             .MinimumLength(8)
-            .WithMessage("New password must be at least 8 characters.");
+            .WithMessage("New password must be at least 8 characters.")
+            .MaximumLength(100)
+            .WithMessage("New password must be 100 characters or fewer.");
 
         RuleFor(x => x.ConfirmPassword)
             .Equal(x => x.NewPassword)

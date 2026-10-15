@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PROManagementSystem.Application.Common.Exceptions;
@@ -59,12 +59,6 @@ public sealed class LoginCommandHandler
                 "Invalid email or password.");
         }
 
-        if (!user.IsActive)
-        {
-            throw new ForbiddenAccessException(
-                "Your account is inactive.");
-        }
-
         var passwordValid = _passwordHasher.Verify(
             request.Password,
             user.PasswordHash);
@@ -78,6 +72,14 @@ public sealed class LoginCommandHandler
 
                 throw new UnauthorizedAccessException(
                 "Invalid email or password.");
+        }
+
+        // Checked only after the password, so a wrong password never reveals
+        // whether an account exists or is inactive.
+        if (!user.IsActive)
+        {
+            throw new ForbiddenAccessException(
+                "Your account is inactive.");
         }
 
         if (!user.IsApproved)
@@ -100,7 +102,8 @@ public sealed class LoginCommandHandler
             _tokenService.HashRefreshToken(refreshToken);
 
 
-        user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(7);
+        user.RefreshTokenExpiry =
+            DateTime.UtcNow.Add(_tokenService.RefreshTokenLifetime);
 
         user.UpdatedAt = DateTime.UtcNow;
 
@@ -126,14 +129,15 @@ public sealed class LoginCommandHandler
         {
             AccessToken = accessToken,
             RefreshToken = refreshToken,
-            ExpiresIn = 60 * 60,
+            ExpiresIn = (int)_tokenService.AccessTokenLifetime.TotalSeconds,
             User = new LoginUserDto
             {
                 Id = user.Id,
                 FullName = user.FullName,
                 Email = user.Email,
                 Role = user.Role.ToString(),
-                ClientCompanyId = user.ClientCompanyId
+                ClientCompanyId = user.ClientCompanyId,
+                MustChangePassword = user.MustChangePassword
             }
         };
     }

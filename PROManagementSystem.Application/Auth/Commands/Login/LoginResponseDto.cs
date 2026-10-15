@@ -1,4 +1,4 @@
-﻿namespace PROManagementSystem.Application.Auth.Commands.Login;
+namespace PROManagementSystem.Application.Auth.Commands.Login;
 
 public sealed class LoginResponseDto
 {
@@ -22,4 +22,6 @@ public sealed class LoginUserDto
     public string Role { get; set; } = string.Empty;
 
     public Guid? ClientCompanyId { get; set; }
+
+    public bool MustChangePassword { get; set; }
 }

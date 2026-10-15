@@ -22,6 +22,8 @@ using PROManagementSystem.Application.Clients.Queries.GetClientCompanies;
 using PROManagementSystem.Application.Common.Behaviours;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.Common.Jobs;
+using PROManagementSystem.Application.Common.Models;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using PROManagementSystem.Application.Common.Realtime;
 using PROManagementSystem.Application.Common.Services;
 using PROManagementSystem.Application.Common.DocumentSchemas;
@@ -57,6 +59,17 @@ builder.Configuration.AddJsonFile(
     optional: true,
     reloadOnChange: true);
 
+// Re-add environment variables and the command line after the local file so
+// they keep the highest precedence (a deployment setting must never be
+// overridden by a developer's appsettings.Local.json).
+builder.Configuration.AddEnvironmentVariables();
+builder.Configuration.AddCommandLine(args);
+
+// Outside Development, refuse to start with missing secrets or placeholder
+// values (see appsettings.Production.json and README.md).
+StartupConfigurationValidator.ValidateOrThrow(
+    builder.Configuration,
+    builder.Environment);
 
 builder.Host.UseSerilog();
 
@@ -213,7 +226,10 @@ builder.Services.Configure<PROManagementSystem.Infrastructure.Payment.RazorpayOp
 builder.Services.AddHttpClient<PROManagementSystem.Application.Common.Interfaces.IRazorpayService,
     PROManagementSystem.Infrastructure.Payment.RazorpayService>(client =>
 {
-    client.BaseAddress = new Uri("https://api.razorpay.com/");
+    client.BaseAddress = new Uri(
+        builder.Configuration["Razorpay:BaseUrl"]
+        ?? throw new InvalidOperationException(
+            "Razorpay:BaseUrl is not configured."));
 })
 .AddStandardResilienceHandler();
 
@@ -231,6 +247,14 @@ if (!Guid.TryParse(
     throw new InvalidOperationException(
         "RenewalAutomation:UserId is not configured correctly.");
 }
+
+builder.Services.Configure<SystemAccountOptions>(
+    options => options.AutomationUserId = parsedAutomationUserId);
+
+builder.Services.Configure<AccountTokenOptions>(
+    builder.Configuration.GetSection(AccountTokenOptions.SectionName));
+
+builder.Services.TryAddSingleton(TimeProvider.System);
 
 builder.Services.AddScoped<DocumentExpiryJob>(sp =>
 {
@@ -352,9 +376,26 @@ builder.Services.AddScoped<
 // Email service
 // ========================================
 
+// SMTP whenever Smtp:Host is configured. Without it, Development falls back
+// to a sender that only logs recipient and subject; any other environment
+// fails at startup.
+builder.Services.Configure<SmtpOptions>(
+    builder.Configuration.GetSection(SmtpOptions.SectionName));
+
+builder.Services.Configure<AppUrlOptions>(
+    builder.Configuration.GetSection(AppUrlOptions.SectionName));
+
+builder.Services.AddSingleton(
+    typeof(IEmailSender),
+    EmailSenderSelection.Select(
+        builder.Environment.IsDevelopment(),
+        builder.Configuration
+            .GetSection(SmtpOptions.SectionName)
+            .Get<SmtpOptions>() ?? new SmtpOptions()));
+
 builder.Services.AddScoped<
     IEmailService,
-    DevelopmentEmailService>();
+    EmailService>();
 
 // ========================================
 // Local file storage
@@ -591,7 +632,9 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
+        policy.WithOrigins(
+                StartupConfigurationValidator.GetAllowedOrigins(
+                    builder.Configuration))
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -843,6 +886,48 @@ if (!app.Environment.IsDevelopment())
 }
 
 // ========================================
+// First Admin bootstrap
+// ========================================
+// Creates the first Admin from ADMIN_EMAIL / ADMIN_PASSWORD when no Admin
+// exists (the automation account does not count). The Admin must change the
+// password on first sign-in. Skipped while migrations are pending so a host
+// booted before `database update` never touches a missing schema.
+var bootstrapAdminEmail =
+    app.Configuration[AdminBootstrapSeeder.EmailVariable];
+var bootstrapAdminPassword =
+    app.Configuration[AdminBootstrapSeeder.PasswordVariable];
+
+if (!string.IsNullOrWhiteSpace(bootstrapAdminEmail) &&
+    !string.IsNullOrEmpty(bootstrapAdminPassword))
+{
+    using var adminSeedScope = app.Services.CreateScope();
+    var adminSeedDbContext =
+        adminSeedScope.ServiceProvider
+            .GetRequiredService<ApplicationDbContext>();
+
+    if (adminSeedDbContext.Database.GetPendingMigrations().Any())
+    {
+        Log.Warning(
+            "Admin bootstrap skipped: the database has pending migrations. " +
+            "Apply them and restart.");
+    }
+    else
+    {
+        var bootstrapResult = AdminBootstrapSeeder.Seed(
+            adminSeedDbContext,
+            adminSeedScope.ServiceProvider
+                .GetRequiredService<IPasswordHasher>(),
+            bootstrapAdminEmail,
+            bootstrapAdminPassword,
+            parsedAutomationUserId);
+
+        Log.Information(
+            "Admin bootstrap result: {Result}.",
+            bootstrapResult);
+    }
+}
+
+// ========================================
 // Serilog request logging
 // ========================================
 
@@ -877,6 +962,8 @@ app.UseAuthentication();
 
 // Add UserId / Role / RequestId to logging context
 app.UseMiddleware<UserContextLoggingMiddleware>();
+// Accounts flagged to change their password may only do that
+app.UseMiddleware<PasswordChangeRequiredMiddleware>();
 // Check authorization policies/roles
 app.UseAuthorization();
 

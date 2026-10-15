@@ -22,10 +22,5 @@ public sealed class CreateClientContactCommandValidator
         RuleFor(x => x.Phone)
             .MaximumLength(30)
             .When(x => x.Phone is not null);
-
-        RuleFor(x => x.Password)
-            .NotEmpty()
-            .MinimumLength(8)
-            .MaximumLength(100);
     }
 }

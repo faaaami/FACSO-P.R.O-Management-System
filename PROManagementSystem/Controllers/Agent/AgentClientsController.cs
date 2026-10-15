@@ -5,6 +5,8 @@ using PROManagementSystem.Api.Common;
 using PROManagementSystem.Application.Agent.Queries.GetAgentClientById;
 using PROManagementSystem.Application.Agent.Queries.GetAgentClientEntities;
 using PROManagementSystem.Application.Agent.Queries.GetAgentClients;
+using PROManagementSystem.Application.Clients.Commands.CreateClientContact;
+using PROManagementSystem.Application.Clients.Commands.ResendClientInvitation;
 using PROManagementSystem.Application.Clients.Queries.GetClientCompanies;
 using PROManagementSystem.Application.Clients.Queries.GetClientCompanyById;
 using PROManagementSystem.Application.Clients.Queries.GetClientEntities;
@@ -110,4 +112,68 @@ public sealed class AgentClientsController : ControllerBase
             ApiResponse<GetClientEntitiesResponseDto>
                 .SuccessResponse(result));
     }
+
+    // ================================================================
+    // POST /api/v1/agent/clients/{id}/contacts
+    // ================================================================
+
+    /// <summary>
+    /// Invites a contact for a client assigned to this Agent. The contact
+    /// receives an email to set their password and still needs Admin approval
+    /// before signing in.
+    /// </summary>
+    [HttpPost("{id:guid}/contacts")]
+    [ProducesResponseType(typeof(ApiResponse<CreateClientContactResponseDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> InviteContact(
+        Guid id,
+        [FromBody] InviteClientContactRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new CreateClientContactCommand(
+                id,
+                request.FullName,
+                request.Email,
+                request.Phone),
+            cancellationToken);
+
+        return StatusCode(
+            StatusCodes.Status201Created,
+            ApiResponse<CreateClientContactResponseDto>
+                .SuccessResponse(result));
+    }
+
+    // ================================================================
+    // POST /api/v1/agent/clients/{id}/contacts/{contactId}/resend-invitation
+    // ================================================================
+
+    [HttpPost("{id:guid}/contacts/{contactId:guid}/resend-invitation")]
+    [ProducesResponseType(typeof(ApiResponse<ResendClientInvitationResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ResendContactInvitation(
+        Guid id,
+        Guid contactId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new ResendClientInvitationCommand(id, contactId),
+            cancellationToken);
+
+        return Ok(
+            ApiResponse<ResendClientInvitationResponseDto>
+                .SuccessResponse(result));
+    }
 }
+
+public sealed record InviteClientContactRequest(
+    string FullName,
+    string Email,
+    string? Phone);

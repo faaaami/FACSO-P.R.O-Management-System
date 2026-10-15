@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Exceptions;
 using PROManagementSystem.Application.Common.Interfaces;
@@ -81,7 +81,7 @@ public sealed class RefreshTokenCommandHandler
             _tokenService.HashRefreshToken(newRefreshToken);
 
         user.RefreshTokenExpiry =
-            DateTime.UtcNow.AddDays(7);
+            DateTime.UtcNow.Add(_tokenService.RefreshTokenLifetime);
 
         user.UpdatedAt = DateTime.UtcNow;
 
@@ -110,6 +110,7 @@ public sealed class RefreshTokenCommandHandler
         return new RefreshTokenResponseDto(
             accessToken,
             newRefreshToken,
-            60);
+            (int)_tokenService.AccessTokenLifetime.TotalSeconds,
+            user.MustChangePassword);
     }
 }

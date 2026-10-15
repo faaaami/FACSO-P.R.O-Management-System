@@ -1,11 +1,12 @@
-﻿using MediatR;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using PROManagementSystem.Api.Common;
 using PROManagementSystem.Api.RateLimiting;
 using PROManagementSystem.Application.Auth.Commands.Login;
-using PROManagementSystem.Application.Auth.Commands.Register;
+using PROManagementSystem.Application.Auth.Commands.AcceptInvitation;
+using PROManagementSystem.Application.Auth.Commands.ResendVerification;
 using PROManagementSystem.Application.Auth.Commands.Logout;
 using PROManagementSystem.Application.Auth.Commands.ForgotPassword;
 using PROManagementSystem.Application.Auth.Commands.RefreshToken;
@@ -37,21 +38,6 @@ public sealed class AuthController : ControllerBase
 
         return Ok(
             ApiResponse<LoginResponseDto>.SuccessResponse(
-                result));
-    }
-
-    [HttpPost("register")]
-    [AllowAnonymous]
-    public async Task<IActionResult> Register(
-        [FromBody] RegisterCommand command,
-        CancellationToken cancellationToken)
-    {
-        var result = await _sender.Send(
-            command,
-            cancellationToken);
-
-        return Ok(
-            ApiResponse<RegisterResponseDto>.SuccessResponse(
                 result));
     }
 
@@ -100,6 +86,39 @@ public sealed class AuthController : ControllerBase
                 result));
     }
 
+
+    [HttpPost("resend-verification")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResendVerification(
+        [FromBody] ResendVerificationCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            command,
+            cancellationToken);
+
+        return Ok(
+            ApiResponse<ResendVerificationResponseDto>.SuccessResponse(
+                result));
+    }
+
+    /// <summary>
+    /// An invited client contact sets their password from the emailed link.
+    /// </summary>
+    [HttpPost("accept-invitation")]
+    [AllowAnonymous]
+    public async Task<IActionResult> AcceptInvitation(
+        [FromBody] AcceptInvitationCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            command,
+            cancellationToken);
+
+        return Ok(
+            ApiResponse<AcceptInvitationResponseDto>.SuccessResponse(
+                result));
+    }
 
     [HttpPost("forgot-password")]
     [AllowAnonymous]

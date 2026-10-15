@@ -1,7 +1,6 @@
-﻿using System.Security.Cryptography;
-using System.Text;
-using MediatR;
+﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Domain.Entities;
 
@@ -22,74 +21,74 @@ public sealed class VerifyEmailCommandHandler
         VerifyEmailCommand request,
         CancellationToken cancellationToken)
     {
-        // 1. Hash the token received from the client
-        var tokenHash = Convert.ToHexString(
-            SHA256.HashData(
-                Encoding.UTF8.GetBytes(request.Token)));
+        var now = DateTime.UtcNow;
+        var tokenHash = AccountTokens.Hash(request.Token.Trim());
 
-        // 2. Find the verification token
+        await using var transaction =
+            await _context.BeginTransactionAsync(cancellationToken);
+
         var storedToken = await _context.EmailVerificationTokens
             .Include(x => x.User)
             .FirstOrDefaultAsync(
-                verification => verification.TokenHash == tokenHash,
+                x => x.TokenHash == tokenHash,
                 cancellationToken);
 
-        // 3. Check whether token exists
-        if (storedToken is null)
+        if (storedToken is null ||
+            storedToken.User.IsDeleted ||
+            !storedToken.User.IsActive)
         {
             throw new UnauthorizedAccessException(
-                "Invalid verification token.");
+                "This verification link is invalid. Please request a new one.");
         }
 
-        // 4. Check whether token was already used
         if (storedToken.UsedAt.HasValue)
         {
             throw new UnauthorizedAccessException(
-                "Verification token has already been used.");
+                "This verification link has already been used.");
         }
 
-        // 5. Check whether token has expired
-        if (storedToken.ExpiresAt <= DateTime.UtcNow)
+        if (storedToken.ExpiresAt <= now)
         {
             throw new UnauthorizedAccessException(
-                "Verification token has expired.");
+                "This verification link has expired. Please request a new one.");
         }
 
-        // 6. Verify the user's email
-        storedToken.User.EmailVerified = true;
+        var claimed = await _context.EmailVerificationTokens
+            .Where(x => x.Id == storedToken.Id && x.UsedAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.UsedAt, now)
+                    .SetProperty(x => x.UpdatedAt, now),
+                cancellationToken);
 
-        // 7. Mark the token as used
-        storedToken.UsedAt = DateTime.UtcNow;
+        if (claimed == 0)
+        {
+            throw new UnauthorizedAccessException(
+                "This verification link has already been used.");
+        }
 
-        // 8. Update timestamps
-        storedToken.User.UpdatedAt = DateTime.UtcNow;
-        storedToken.UpdatedAt = DateTime.UtcNow;
+        var user = storedToken.User;
+        user.EmailVerified = true;
+        user.UpdatedAt = now;
 
-        // 9. Record the verification
-        var auditLog = new AuditLog
+        _context.AuditLogs.Add(new AuditLog
         {
             Id = Guid.NewGuid(),
             UserId = null,
             Action = "EmailVerified",
             EntityType = "User",
-            EntityId = storedToken.User.Id,
-            Description =
-                "User email was verified.",
-            CreatedAt = storedToken.User.UpdatedAt,
-            UpdatedAt = storedToken.User.UpdatedAt,
-            IsDeleted = false,
-            DeletedAt = null
-        };
-        _context.AuditLogs.Add(auditLog);
+            EntityId = user.Id,
+            Description = "User email was verified.",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
 
-        // 10. Save changes
-        await _context.SaveChangesAsync(
-            cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
-        // 11. Return DTO
         return new VerifyEmailResponseDto(
-            storedToken.User.Id,
-            storedToken.User.Email,
-            storedToken.User.EmailVerified);
+            user.Id,
+            user.Email,
+            user.EmailVerified);
     }
 }

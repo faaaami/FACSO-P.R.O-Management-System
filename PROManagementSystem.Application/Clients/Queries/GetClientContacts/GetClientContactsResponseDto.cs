@@ -1,4 +1,4 @@
-﻿namespace PROManagementSystem.Application.Clients.Queries.GetClientContacts;
+namespace PROManagementSystem.Application.Clients.Queries.GetClientContacts;
 
 public sealed record GetClientContactListItemDto(
     Guid Id,
@@ -10,7 +10,9 @@ public sealed record GetClientContactListItemDto(
     bool IsActive,
     bool IsApproved,
     bool IsDeleted,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    // False until the contact accepts their invitation and sets a password.
+    bool EmailVerified
 );
 
 public sealed record GetClientContactsResponseDto(

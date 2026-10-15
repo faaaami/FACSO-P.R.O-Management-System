@@ -1,14 +1,13 @@
 ﻿namespace PROManagementSystem.Application.Clients.Commands.CreateClientContact;
 
 /// <summary>
-/// Account information for a newly created client contact.
-/// <para>
-/// This deliberately carries NO password field of any kind. The password is
-/// chosen by the Admin, who already holds it, so echoing it back would add a
-/// disclosure with no benefit. The only place the plaintext exists is the
-/// Admin's own request.
-/// </para>
+/// The invited contact. Carries no credential: the contact sets their own
+/// password from the invitation email.
 /// </summary>
+/// <param name="InvitationSent">
+/// False when the email could not be delivered; the account exists and the
+/// invitation can be resent.
+/// </param>
 public sealed record CreateClientContactResponseDto(
     Guid Id,
     Guid ClientCompanyId,
@@ -17,5 +16,7 @@ public sealed record CreateClientContactResponseDto(
     string? Phone,
     string Role,
     bool IsActive,
-    bool IsApproved
+    bool IsApproved,
+    bool InvitationSent,
+    DateTime InvitationExpiresAt
 );

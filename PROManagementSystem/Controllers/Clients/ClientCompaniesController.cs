@@ -1,4 +1,5 @@
-﻿using MediatR;
+using MediatR;
+using PROManagementSystem.Application.Clients.Commands.ResendClientInvitation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PROManagementSystem.Api.Common;
@@ -414,6 +415,30 @@ public sealed class ClientCompaniesController : ControllerBase
 
         return Ok(
             ApiResponse<DeleteClientContactResponseDto>
+                .SuccessResponse(result));
+    }
+
+    /// <summary>
+    /// Sends a new invitation link to a contact who has not set a password
+    /// yet. Earlier links stop working.
+    /// </summary>
+    [HttpPost("{clientId:guid}/contacts/{contactId:guid}/resend-invitation")]
+    [ProducesResponseType(typeof(ApiResponse<ResendClientInvitationResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ResendContactInvitation(
+        Guid clientId,
+        Guid contactId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new ResendClientInvitationCommand(clientId, contactId),
+            cancellationToken);
+
+        return Ok(
+            ApiResponse<ResendClientInvitationResponseDto>
                 .SuccessResponse(result));
     }
 

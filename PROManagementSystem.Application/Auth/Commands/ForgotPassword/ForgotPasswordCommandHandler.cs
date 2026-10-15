@@ -1,86 +1,113 @@
-﻿using System.Security.Cryptography;
-using System.Text;
-using MediatR;
+﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using PROManagementSystem.Application.Auth.Common;
+using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Common.Models;
 using PROManagementSystem.Domain.Entities;
+using PROManagementSystem.Domain.Enums;
 
 namespace PROManagementSystem.Application.Auth.Commands.ForgotPassword;
 
 public sealed class ForgotPasswordCommandHandler
     : IRequestHandler<ForgotPasswordCommand, ForgotPasswordResponseDto>
 {
+    public const string GenericMessage =
+        "If an account exists with this email, a password reset link has been sent.";
+
     private readonly IApplicationDbContext _context;
     private readonly IEmailService _emailService;
+    private readonly SystemAccountOptions _systemAccounts;
+    private readonly ILogger<ForgotPasswordCommandHandler> _logger;
 
     public ForgotPasswordCommandHandler(
         IApplicationDbContext context,
-        IEmailService emailService)
+        IEmailService emailService,
+        IOptions<SystemAccountOptions> systemAccounts,
+        ILogger<ForgotPasswordCommandHandler> logger)
     {
         _context = context;
         _emailService = emailService;
+        _systemAccounts = systemAccounts.Value;
+        _logger = logger;
     }
 
     public async Task<ForgotPasswordResponseDto> Handle(
         ForgotPasswordCommand request,
         CancellationToken cancellationToken)
     {
-        const string message =
-            "If an account exists with this email, a password reset link has been sent.";
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
 
-        // 1. Find the user
         var user = await _context.Users
             .FirstOrDefaultAsync(
-                x => x.Email == request.Email.Trim().ToLowerInvariant(),
+                x => x.Email == normalizedEmail &&
+                     x.IsActive &&
+                     x.Id != _systemAccounts.AutomationUserId,
                 cancellationToken);
 
-        // 2. Do not reveal whether the email exists
+        // The response never reveals whether the email exists.
         if (user is null)
         {
-            return new ForgotPasswordResponseDto(message);
+            return new ForgotPasswordResponseDto(GenericMessage);
         }
 
-        // 3. Generate a secure random token
-        var tokenBytes = RandomNumberGenerator.GetBytes(32);
+        var now = DateTime.UtcNow;
+        var rawToken = AccountTokens.Generate();
+        var expiresAt = now.Add(AccountTokens.PasswordResetLifetime);
 
-        var resetToken =
-            Convert.ToBase64String(tokenBytes);
+        // Only the newest link works.
+        await PasswordTokenRedemption.RevokeOutstandingAsync(
+            _context,
+            user.Id,
+            AccountTokenPurpose.PasswordReset,
+            now,
+            cancellationToken);
 
-        // 4. Hash the token before storing it
-        var tokenHash = Convert.ToHexString(
-            SHA256.HashData(
-                Encoding.UTF8.GetBytes(resetToken)));
-
-        // 5. Create reset token entity
-        var resetTokenEntity = new PasswordResetToken
+        _context.PasswordResetTokens.Add(new PasswordResetToken
         {
             Id = Guid.NewGuid(),
-
             UserId = user.Id,
+            TokenHash = AccountTokens.Hash(rawToken),
+            Purpose = AccountTokenPurpose.PasswordReset,
+            ExpiresAt = expiresAt,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
 
-            TokenHash = tokenHash,
+        _context.AuditLogs.Add(new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = null,
+            Action = "PasswordResetRequested",
+            EntityType = "User",
+            EntityId = user.Id,
+            Description = "A password reset link was requested.",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
 
-            ExpiresAt = DateTime.UtcNow.AddHours(1),
+        await _context.SaveChangesAsync(cancellationToken);
 
-            CreatedAt = DateTime.UtcNow,
+        try
+        {
+            await _emailService.SendPasswordResetAsync(
+                user.Email,
+                user.FullName,
+                rawToken,
+                expiresAt,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            // A delivery failure must not reveal that the account exists.
+            _logger.LogError(
+                exception,
+                "Failed to send the password reset email for user {UserId}.",
+                user.Id);
+        }
 
-            UpdatedAt = DateTime.UtcNow
-        };
-
-        _context.PasswordResetTokens.Add(
-            resetTokenEntity);
-
-        // 6. Save the token
-        await _context.SaveChangesAsync(
-            cancellationToken);
-
-        // 7. Send reset token through email service
-        await _emailService.SendPasswordResetAsync(
-            user.Email,
-            resetToken,
-            cancellationToken);
-
-        // 8. Return generic response
-        return new ForgotPasswordResponseDto(message);
+        return new ForgotPasswordResponseDto(GenericMessage);
     }
 }

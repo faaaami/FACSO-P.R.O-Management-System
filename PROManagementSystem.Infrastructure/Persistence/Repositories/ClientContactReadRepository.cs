@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using Npgsql;
 using PROManagementSystem.Application.Clients.Queries.GetClientContacts;
 using PROManagementSystem.Application.Common.Interfaces;
@@ -75,7 +75,8 @@ public sealed class ClientContactReadRepository
                 is_active AS IsActive,
                 is_approved AS IsApproved,
                 is_deleted AS IsDeleted,
-                created_at AS CreatedAt
+                created_at AS CreatedAt,
+                email_verified AS EmailVerified
             FROM users
             {whereClause}
             ORDER BY created_at DESC, id ASC

@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Domain.Entities;
@@ -18,6 +18,19 @@ public sealed class JwtTokenService : ITokenService
         _configuration = configuration;
     }
 
+    public TimeSpan AccessTokenLifetime =>
+        TimeSpan.FromMinutes(ReadPositive(
+            "Jwt:AccessTokenExpirationMinutes", 60));
+
+    public TimeSpan RefreshTokenLifetime =>
+        TimeSpan.FromDays(ReadPositive(
+            "Jwt:RefreshTokenExpirationDays", 7));
+
+    private int ReadPositive(string key, int fallback)
+        => int.TryParse(_configuration[key], out var value) && value > 0
+            ? value
+            : fallback;
+
     public string GenerateAccessToken(User user)
     {
         var jwtSettings = _configuration.GetSection("Jwt");
@@ -34,8 +47,6 @@ public sealed class JwtTokenService : ITokenService
             ?? throw new InvalidOperationException(
                 "JWT Audience is not configured.");
 
-        var expirationMinutes = int.Parse(
-            jwtSettings["AccessTokenExpirationMinutes"] ?? "60");
 
         var claims = new List<Claim>
         {
@@ -68,6 +79,14 @@ public sealed class JwtTokenService : ITokenService
                     user.ClientCompanyId.Value.ToString()));
         }
 
+        if (user.MustChangePassword)
+        {
+            claims.Add(
+                new Claim(
+                    ITokenService.PasswordChangeRequiredClaim,
+                    "true"));
+        }
+
         var key = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes(secret));
 
@@ -79,7 +98,7 @@ public sealed class JwtTokenService : ITokenService
             issuer: issuer,
             audience: audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(expirationMinutes),
+            expires: DateTime.UtcNow.Add(AccessTokenLifetime),
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler()
