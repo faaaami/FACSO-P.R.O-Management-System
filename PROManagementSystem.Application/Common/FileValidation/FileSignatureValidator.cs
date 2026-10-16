@@ -20,7 +20,15 @@ public static class FileSignatureValidator
         "File signature does not match the content type.";
 
     /// <summary>Longest signature the validator must read (PNG, 8 bytes).</summary>
-    private const int MaxSignatureLength = 8;
+    private const int MaxSignatureLength = 12;
+
+    // ISO base media file: bytes 4–7 are "ftyp", bytes 8–11 the major brand.
+    private static readonly byte[] FtypMarker = [0x66, 0x74, 0x79, 0x70];
+
+    private static readonly HashSet<string> HeifBrands = new(StringComparer.Ordinal)
+    {
+        "heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1"
+    };
 
     private static readonly
         IReadOnlyDictionary<string, byte[]>
@@ -46,12 +54,19 @@ public static class FileSignatureValidator
             return false;
         }
 
-        if (!SignaturesByContentType.TryGetValue(
+        var isHeif = FileUploadPolicy.IsHeic(contentType);
+
+        byte[]? expected = null;
+
+        if (!isHeif &&
+            !SignaturesByContentType.TryGetValue(
                 contentType,
-                out var expected))
+                out expected))
         {
             return false;
         }
+
+        var required = isHeif ? MaxSignatureLength : expected!.Length;
 
         // Non-seekable streams cannot be replayed: reading the prefix would
         // consume bytes the storage/extraction flow depends on. Skip the
@@ -68,12 +83,12 @@ public static class FileSignatureValidator
             var buffer = new byte[MaxSignatureLength];
             var totalRead = 0;
 
-            while (totalRead < expected.Length)
+            while (totalRead < required)
             {
                 var bytesRead = stream.Read(
                     buffer,
                     totalRead,
-                    expected.Length - totalRead);
+                    required - totalRead);
 
                 if (bytesRead <= 0)
                 {
@@ -83,12 +98,20 @@ public static class FileSignatureValidator
                 totalRead += bytesRead;
             }
 
-            if (totalRead < expected.Length)
+            if (totalRead < required)
             {
                 return false;
             }
 
-            return buffer.AsSpan(0, expected.Length)
+            if (isHeif)
+            {
+                var brand = System.Text.Encoding.ASCII.GetString(buffer, 8, 4);
+
+                return buffer.AsSpan(4, 4).SequenceEqual(FtypMarker)
+                       && HeifBrands.Contains(brand);
+            }
+
+            return buffer.AsSpan(0, expected!.Length)
                 .SequenceEqual(expected);
         }
         finally

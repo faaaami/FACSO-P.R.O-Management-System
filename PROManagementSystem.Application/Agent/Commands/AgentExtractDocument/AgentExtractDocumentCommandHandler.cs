@@ -13,17 +13,20 @@ public sealed class AgentExtractDocumentCommandHandler
 {
     private readonly IDocumentExtractionService _extractor;
     private readonly IFileStorageService _storage;
+    private readonly IUploadImageConverter _imageConverter;
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
 
     public AgentExtractDocumentCommandHandler(
         IDocumentExtractionService extractor,
         IFileStorageService storage,
+        IUploadImageConverter imageConverter,
         IApplicationDbContext context,
         ICurrentUserService currentUser)
     {
         _extractor = extractor;
         _storage = storage;
+        _imageConverter = imageConverter;
         _context = context;
         _currentUser = currentUser;
     }
@@ -47,28 +50,42 @@ public sealed class AgentExtractDocumentCommandHandler
         // Ensure the caller is an authenticated agent.
         var agentId = _currentUser.UserId!.Value;
 
+        // HEIC/HEIF photos are stored (and read) as JPEG so the browser can
+        // preview them; other files are stored exactly as uploaded.
+        await using var converted =
+            await _imageConverter.ConvertForStorageAsync(
+                request.FileStream,
+                request.FileName,
+                request.ContentType,
+                cancellationToken);
+
+        var fileStream = converted?.Content ?? request.FileStream;
+        var fileName = converted?.FileName ?? request.FileName;
+        var contentType = converted?.ContentType ?? request.ContentType;
+        var fileSize = converted?.FileSize ?? request.FileSize;
+
         // 1. Persist the validated upload under a server-generated
         //    storage reference before anything else can succeed.
         var storedReference =
             await _storage.SaveAsync(
-                request.FileStream,
-                request.FileName,
-                request.ContentType,
+                fileStream,
+                fileName,
+                contentType,
                 cancellationToken);
 
         try
         {
             // Reset the stream so the extraction service reads from
             // the start (storage has consumed it to EOF).
-            if (request.FileStream.CanSeek)
+            if (fileStream.CanSeek)
             {
-                request.FileStream.Position = 0;
+                fileStream.Position = 0;
             }
 
             var extractionResult =
                 await _extractor.ExtractAsync(
-                    request.FileStream,
-                    request.ContentType,
+                    fileStream,
+                    contentType,
                     cancellationToken);
 
             var now = DateTime.UtcNow;
@@ -77,13 +94,13 @@ public sealed class AgentExtractDocumentCommandHandler
             {
                 Id = Guid.NewGuid(),
 
-                FileName = request.FileName,
+                FileName = fileName,
 
                 FileUrl = storedReference,
 
-                ContentType = request.ContentType,
+                ContentType = contentType,
 
-                FileSize = request.FileSize,
+                FileSize = fileSize,
 
                 SuggestedType = extractionResult.Type,
 
@@ -132,7 +149,7 @@ public sealed class AgentExtractDocumentCommandHandler
                 EntityType = "DocumentExtraction",
                 EntityId = extraction.Id,
                 Description =
-                    $"Document extraction started for file '{request.FileName}'.",
+                    $"Document extraction started for file '{fileName}'.",
                 CreatedAt = now,
                 UpdatedAt = now,
                 IsDeleted = false,

@@ -452,6 +452,15 @@ builder.Services.AddScoped<LocalDocumentExtractionService>();
 builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
 builder.Services.AddScoped<IImageOcrExtractor, TesseractImageOcrExtractor>();
 builder.Services.AddScoped<IPdfPageRenderer, PdfiumPdfPageRenderer>();
+
+// Image normalisation for OCR (EXIF orientation, grayscale, contrast, resize)
+// and HEIC-to-JPEG conversion of uploads. Stateless, so one instance serves
+// both roles.
+builder.Services.AddSingleton<ImagePreprocessor>();
+builder.Services.AddSingleton<IImagePreprocessor>(
+    provider => provider.GetRequiredService<ImagePreprocessor>());
+builder.Services.AddSingleton<IUploadImageConverter>(
+    provider => provider.GetRequiredService<ImagePreprocessor>());
 builder.Services.AddScoped<ScannedPdfOcrService>();
 
 // Process-wide cap on simultaneous heavy OCR operations (Task 6B.7). The gate

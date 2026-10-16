@@ -31,8 +31,57 @@ public static class FileUploadPolicy
                     new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                     {
                         "png"
+                    },
+                // iPhone photos. Converted to JPEG before storage so they can
+                // be previewed in the browser.
+                ["image/heic"] =
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        "heic",
+                        "heif"
+                    },
+                ["image/heif"] =
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        "heif",
+                        "heic"
                     }
             };
+
+    public static bool IsHeic(string? contentType)
+        => string.Equals(contentType, "image/heic", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(contentType, "image/heif", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Browsers on Windows and Android often send HEIC photos as
+    /// application/octet-stream or with no type. For a .heic/.heif file name
+    /// the type is taken from the extension; every other type is returned
+    /// unchanged (and still checked against the file's magic bytes).
+    /// </summary>
+    public static string NormalizeContentType(string? contentType, string? fileName)
+    {
+        var extension = string.IsNullOrWhiteSpace(fileName)
+            ? null
+            : GetExtension(fileName);
+
+        var isGeneric = string.IsNullOrWhiteSpace(contentType)
+            || string.Equals(contentType, "application/octet-stream", StringComparison.OrdinalIgnoreCase);
+
+        if (isGeneric && extension is not null)
+        {
+            if (extension.Equals("heic", StringComparison.OrdinalIgnoreCase))
+            {
+                return "image/heic";
+            }
+
+            if (extension.Equals("heif", StringComparison.OrdinalIgnoreCase))
+            {
+                return "image/heif";
+            }
+        }
+
+        return contentType ?? string.Empty;
+    }
 
     public static bool IsContentTypeAllowed(string? contentType)
         => contentType is not null

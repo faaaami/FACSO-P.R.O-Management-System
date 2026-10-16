@@ -1,3 +1,4 @@
+using PROManagementSystem.Application.Common.FileValidation;
 ﻿using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -584,7 +585,7 @@ public sealed class DocumentsController : ControllerBase
         var command = new ExtractDocumentCommand(
             stream,
             file.FileName,
-            file.ContentType,
+            FileUploadPolicy.NormalizeContentType(file.ContentType, file.FileName),
             file.Length);
 
         var result =

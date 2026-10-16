@@ -54,6 +54,18 @@ public sealed class OcrOptions
     public int RenderDpi { get; set; } = 300;
 
     /// <summary>
+    /// Photos larger than this (longest side, pixels) are downscaled before
+    /// OCR instead of being skipped. 0 disables downscaling.
+    /// </summary>
+    public int MaxImageLongEdge { get; set; } = 2400;
+
+    /// <summary>
+    /// Images whose shorter side is below this many pixels are reported as
+    /// too small to read reliably.
+    /// </summary>
+    public int MinImageShortEdge { get; set; } = 600;
+
+    /// <summary>
     /// Maximum number of simultaneous heavy OCR operations (image Tesseract
     /// recognition and scanned-PDF rasterisation + page OCR) for the Local
     /// provider. The process-wide <see cref="OcrWorkloadGate"/> enforces the

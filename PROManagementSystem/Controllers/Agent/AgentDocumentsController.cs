@@ -1,3 +1,4 @@
+using PROManagementSystem.Application.Common.FileValidation;
 using System.Text.Json;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -99,7 +100,7 @@ public sealed class AgentDocumentsController : ControllerBase
         var command = new AgentExtractDocumentCommand(
             stream,
             file.FileName,
-            file.ContentType,
+            FileUploadPolicy.NormalizeContentType(file.ContentType, file.FileName),
             file.Length);
 
         var result = await _sender.Send(
