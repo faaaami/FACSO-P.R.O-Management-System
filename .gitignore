@@ -65,6 +65,13 @@ Thumbs.db
 /PROManagementSystem/storage/
 
 # ==============================
+# Real document samples for local extraction testing
+# (personal data: never commit)
+# ==============================
+
+samples/
+
+# ==============================
 # IDE
 # ==============================
 

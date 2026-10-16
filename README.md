@@ -60,8 +60,12 @@ Optional (defaults shown):
 | `Auth__Tokens__EmailVerificationLifetimeHours` | `24` | Email verification link lifetime. Password-reset links always expire after **1 hour**. |
 | `RenewalAutomation__UserId` | `00000000-0000-0000-0000-0000000000aa` | Id of the system account the expiry jobs act as. Seeded automatically; nobody can sign in to it. |
 | `Razorpay__BaseUrl` | `https://api.razorpay.com/` | |
-| `Extraction__Provider` | `Mock` | `Mock`, `Local` (on-server OCR) or `OpenRouter`. |
-| `Extraction__OpenRouter__Endpoint` / `__Model` / `__ApiKey` | empty | Required only when the provider is `OpenRouter`. |
+| `Extraction__Provider` | `Mock` | `Mock` (fixed placeholder values) or `Local` (the extraction pipeline, see [Document extraction](#document-extraction)). `OpenRouter` is still accepted and means `Local` with AI enabled. |
+| `Extraction__Ai__Enabled` | `false` | Sends recognised text to the AI service for types without an MRZ. Off by default; when off, nothing leaves the server. |
+| `Extraction__OpenRouter__Endpoint` / `__Model` / `__ApiKey` | empty | Required only when AI is enabled. Pin a specific model rather than `openrouter/auto`. |
+| `Extraction__OcrTimeoutSeconds` | `60` | Deadline for reading one document; slower reads end with "took too long" and manual entry. |
+| `Extraction__MaxConcurrentOcr` | `2` | Documents read at the same time; further uploads wait for a slot. |
+| `Extraction__MaxImageLongEdge` / `__MinImageShortEdge` | `2400` / `600` | Photos are downscaled to the long edge before reading; images below the short edge are reported as too small. |
 | `RateLimiting__Authentication__PermitLimit` / `__WindowSeconds` | `10` / `60` | Per-IP limit on the anonymous `/auth/*` endpoints. |
 
 First start only (see [First Admin](#first-admin)):
@@ -98,6 +102,28 @@ so remove them after the first successful start. The result is logged as
   Requesting a new link invalidates the previous one, and a reset signs out
   existing sessions.
 - Tokens are never stored in plain text (SHA-256 hashes only) and never logged.
+
+## Document extraction
+
+Staff choose the document type, then upload a PDF, JPG, PNG or HEIC photo
+(HEIC is stored as JPEG). Nothing is saved until a person confirms the review
+form.
+
+- **Passport / Emirates ID:** the MRZ is read (photo page; back of the Emirates
+  ID) and every check digit verified. Emirates ID numbers must be
+  `784-YYYY-NNNNNNN-N`. MRZ passport numbers always say "Read from MRZ –
+  compare with the number printed on the passport", because check digits
+  cannot catch every look-alike (L/1, I/8, S/8); Indian, Pakistani and UK
+  numbers also get layout hints.
+- **Other types:** labelled values from a PDF text layer or OCR; AI only when
+  `Extraction__Ai__Enabled` is true.
+- Each field shows its source (MRZ / OCR / AI / manual) with errors and
+  warnings, and a message explains when a document could not be read.
+- Logs record only document type, duration and outcome code: never text,
+  values or images.
+
+Real sample documents for local testing go in `samples/` (gitignored, never
+committed); redact anything not needed for the test.
 
 ## Running locally
 
