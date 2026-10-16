@@ -86,7 +86,7 @@ export function useExtractAdminDocument() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (file) => extractAdminDocument(file),
+    mutationFn: ({ file, documentType }) => extractAdminDocument(file, documentType),
     onSuccess: (data) => {
       if (data?.extractionId) {
         queryClient.invalidateQueries({

@@ -1,4 +1,5 @@
 import FormField, { inputClass, inputErrorClass } from '../client/settings/FormField'
+import ExtractedFieldHint from './ExtractedFieldHint'
 
 /**
  * Schema-driven editor for a document's free-form `details` object.
@@ -116,8 +117,10 @@ function FieldControl({ field, register, error, id, disabled }) {
  *   errors    the parent form's errors, read at `errors.details`
  *   disabled  passed to every control, so a confirmation in flight cannot be
  *             edited underneath itself
+ *   fieldResults  optional extraction results keyed like the fields; each
+ *             field shows its source, errors and warnings under the control
  */
-function DocumentDetailsFields({ fields, register, errors, disabled = false }) {
+function DocumentDetailsFields({ fields, register, errors, disabled = false, fieldResults = null }) {
   if (!Array.isArray(fields) || fields.length === 0) {
     return (
       <p className="rounded-[10px] border border-[#E2E4E9] bg-[#F7F8FA] px-3.5 py-3 text-xs leading-relaxed text-[#6B7280]">
@@ -146,6 +149,7 @@ function DocumentDetailsFields({ fields, register, errors, disabled = false }) {
               id={id}
               disabled={disabled}
             />
+            <ExtractedFieldHint result={fieldResults?.[field.key] ?? null} />
           </FormField>
         )
       })}

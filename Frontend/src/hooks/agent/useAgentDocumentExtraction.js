@@ -89,7 +89,7 @@ export function useExtractAgentDocument() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (file) => extractAgentDocument(file),
+    mutationFn: ({ file, documentType }) => extractAgentDocument(file, documentType),
     onSuccess: (data) => {
       if (data?.extractionId) {
         queryClient.invalidateQueries({

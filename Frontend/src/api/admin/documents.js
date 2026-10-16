@@ -100,7 +100,7 @@ const EXTRACTION_TIMEOUT_MS = 180_000
 /**
  * Uploads a document and runs extraction synchronously.
  * POST /api/v1/admin/documents/extract
- * FormData: file
+ * FormData: file, documentType (required: Passport, EmiratesId, Visa, …)
  * Returns ExtractDocumentResponseDto { extractionId, ...suggestions }
  *
  * `Content-Type` is deliberately NOT set: the browser must generate the
@@ -111,9 +111,11 @@ const EXTRACTION_TIMEOUT_MS = 180_000
  * extension agreement, magic bytes and the 1 B - 20 MB size range are all
  * re-checked on upload.
  */
-export async function extractAdminDocument(file) {
+export async function extractAdminDocument(file, documentType) {
   const form = new FormData()
   form.append('file', file)
+  // Chosen by staff before upload; the server reads the document as this type.
+  form.append('documentType', documentType)
 
   const response = await apiClient.post('/admin/documents/extract', form, {
     headers: { 'Content-Type': undefined },
@@ -132,7 +134,7 @@ export async function extractAdminDocument(file) {
  *   totalCount }
  *   item: PendingDocumentExtractionListItemDto { id, fileName, contentType,
  *     fileSize, suggestedType?, suggestedDocumentNumber?, suggestedIssueDate?,
- *     suggestedExpiryDate?, suggestedOwnerType?, confidence, status,
+ *     suggestedExpiryDate?, suggestedOwnerType?, failureCode?, status,
  *     expiresAt?, createdAt, createdBy? }
  *
  * THIS IS A REVIEW QUEUE, NOT A DOCUMENT BROWSER. It lists extraction drafts

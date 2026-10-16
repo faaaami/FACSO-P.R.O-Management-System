@@ -55,11 +55,47 @@ export function normaliseSuggestedOwnerType(suggested) {
   return OWNER_KIND.employee
 }
 
-/** Renders a decimal confidence as a whole percentage, or null. */
-export function formatConfidence(value) {
-  const numeric = typeof value === 'string' ? Number(value) : value
-  if (typeof numeric !== 'number' || Number.isNaN(numeric)) return null
-  return `${Math.round(numeric * 100)}%`
+/** How each extraction source is described to the reviewer. */
+export const SOURCE_LABELS = {
+  Mrz: 'Read from MRZ',
+  Ocr: 'Read by OCR',
+  Ai: 'Read by AI',
+  Manual: 'Enter manually',
+}
+
+/**
+ * The extractor's result for one field ({ value, source, errors, warnings }),
+ * or null when the draft has none for that key. Keys are "documentNumber",
+ * "issueDate", "expiryDate" and the type's schema keys.
+ */
+export function fieldResult(extraction, key) {
+  return extraction?.fields?.[key] ?? null
+}
+
+/** Short label for a draft's failure code in lists. */
+export function failureLabel(code) {
+  switch (code) {
+    case null:
+    case undefined:
+    case '':
+      return null
+    case 'MRZ_NOT_FOUND':
+      return 'MRZ not found'
+    case 'MRZ_CHECK_FAILED':
+      return 'Check digits failed'
+    case 'IMAGE_UNREADABLE':
+      return 'Unreadable file'
+    case 'IMAGE_TOO_SMALL':
+      return 'Image too small'
+    case 'OCR_TIMEOUT':
+      return 'Took too long'
+    case 'AI_DISABLED':
+      return 'Enter manually'
+    case 'AI_UNAVAILABLE':
+      return 'Service unavailable'
+    default:
+      return 'Nothing read'
+  }
 }
 
 // ---------------------------------------------------------------------

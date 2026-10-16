@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { AlertCircle, Loader2, UploadCloud } from 'lucide-react'
 import { toast } from 'sonner'
 import { extractApiErrorMessage } from '../../utils/apiError'
+import { DOCUMENT_TYPES } from '../client/enumLabels'
 
 /**
  * These restate the server's own upload rules so a wrong file is refused before
@@ -11,8 +12,13 @@ import { extractApiErrorMessage } from '../../utils/apiError'
  */
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
 const MAX_FILE_NAME_LENGTH = 255
-const ACCEPTED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png']
-const ACCEPTED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png']
+const ACCEPTED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'heif']
+// Browsers often report HEIC photos with an empty type; the server then
+// decides from the extension and the file's own bytes.
+const ACCEPTED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/heic', 'image/heif']
+const ACCEPT_ATTRIBUTE =
+  '.pdf,.jpg,.jpeg,.png,.heic,.heif,application/pdf,image/jpeg,image/png,image/heic,image/heif'
+const NOT_ACCEPTED = 'That file type is not accepted. Upload a PDF, JPG, PNG or HEIC.'
 
 /**
  * Document upload + extraction. SHARED BY AGENT AND ADMIN.
@@ -29,6 +35,10 @@ const ACCEPTED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png']
  * file and returns the extraction. A failure leaves nothing behind — the server
  * deletes a stored file whose extraction failed — so retrying is always safe.
  *
+ * THE DOCUMENT TYPE IS CHOSEN FIRST. The server reads the file as that type
+ * (the MRZ for passports and Emirates IDs), so the file picker stays disabled
+ * until a type is selected. The type can still be corrected on review.
+ *
  * NO OWNER IS CHOSEN HERE. The extractor reads a file and cannot know who it
  * belongs to, so the owner is picked in the review drawer from a real, scoped
  * list.
@@ -42,6 +52,7 @@ function DocumentUploadCard({ useExtract, onExtracted, isAgent = true }) {
   const inputRef = useRef(null)
   const [localError, setLocalError] = useState(null)
   const [selectedName, setSelectedName] = useState(null)
+  const [documentType, setDocumentType] = useState('')
 
   const extract = useExtract()
   const isExtracting = extract.isPending
@@ -56,13 +67,13 @@ function DocumentUploadCard({ useExtract, onExtracted, isAgent = true }) {
 
     const extension = name.includes('.') ? name.split('.').pop().toLowerCase() : ''
     if (!ACCEPTED_EXTENSIONS.includes(extension)) {
-      return 'That file type is not accepted. Upload a PDF, JPG, JPEG or PNG.'
+      return NOT_ACCEPTED
     }
 
     // A renamed file reports the wrong type here and is caught properly by the
     // server's magic-byte check; this only catches the honest mismatch early.
     if (file.type && !ACCEPTED_MIME_TYPES.includes(file.type)) {
-      return 'That file type is not accepted. Upload a PDF, JPG, JPEG or PNG.'
+      return NOT_ACCEPTED
     }
 
     if (file.size < 1 || file.size > MAX_FILE_SIZE_BYTES) {
@@ -91,7 +102,7 @@ function DocumentUploadCard({ useExtract, onExtracted, isAgent = true }) {
     setLocalError(null)
     setSelectedName(file.name)
 
-    extract.mutate(file, {
+    extract.mutate({ file, documentType }, {
       onSuccess: (data) => {
         setSelectedName(null)
         toast.success('Extraction finished. Check the suggested values before confirming.')
@@ -117,17 +128,37 @@ function DocumentUploadCard({ useExtract, onExtracted, isAgent = true }) {
               {isAgent ? 'Upload a document to register' : 'Upload a document for review'}
             </p>
             <p className="mt-0.5 text-xs leading-relaxed text-[#6B7280]">
-              PDF, JPG, JPEG or PNG, up to 20 MB. Extraction runs while the upload is in progress, and
-              you confirm or correct everything it finds before it becomes a document.
+              Choose the document type, then a PDF, JPG, PNG or HEIC photo up to 20 MB. For passports
+              use the photo page; for an Emirates ID the back side, where the MRZ is. You confirm or
+              correct everything that is read before it becomes a document.
             </p>
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+          <label htmlFor="uploadDocumentType" className="sr-only">
+            Document type
+          </label>
+          <select
+            id="uploadDocumentType"
+            value={documentType}
+            onChange={(event) => setDocumentType(event.target.value)}
+            disabled={isExtracting}
+            className="rounded-[10px] border border-[#E2E4E9] bg-white px-3 py-2.5 text-sm text-[#16181D] focus:border-[#0F9D74] focus:outline-none focus:ring-2 focus:ring-[rgba(15,157,116,0.15)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="">Document type…</option>
+            {Object.entries(DOCUMENT_TYPES).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            disabled={isExtracting}
+            disabled={isExtracting || !documentType}
+            title={documentType ? undefined : 'Choose the document type first'}
             className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] bg-[#1C1F26] px-4 py-2.5 text-sm font-semibold text-white transition duration-150 hover:bg-[#101319] focus:outline-none focus:ring-2 focus:ring-[#0F9D74] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isExtracting ? (
@@ -151,9 +182,9 @@ function DocumentUploadCard({ useExtract, onExtracted, isAgent = true }) {
           <input
             ref={inputRef}
             type="file"
-            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+            accept={ACCEPT_ATTRIBUTE}
             onChange={handleChange}
-            disabled={isExtracting}
+            disabled={isExtracting || !documentType}
             className="sr-only"
             aria-label="Choose a document to upload and extract"
           />

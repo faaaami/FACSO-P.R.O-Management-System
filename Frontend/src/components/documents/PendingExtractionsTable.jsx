@@ -3,7 +3,7 @@ import StatusPill from '../client/StatusPill'
 import { documentTypeLabel } from '../agent/documents/documentDisplay'
 import { formatFileSize } from '../agent/documents/documentDisplay'
 import { formatDateTime } from '../agent/documents/documentDisplay'
-import { formatConfidence } from './documentExtractionForm'
+import { failureLabel } from './documentExtractionForm'
 
 /**
  * The extraction review queue, one row per draft. SHARED BY AGENT AND ADMIN.
@@ -51,7 +51,7 @@ function PendingExtractionsTable({ items, onReview }) {
               Document #
             </th>
             <th scope="col" className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-              Confidence
+              Reading
             </th>
             <th scope="col" className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
               Uploaded
@@ -66,7 +66,7 @@ function PendingExtractionsTable({ items, onReview }) {
         </thead>
         <tbody className="divide-y divide-[#E2E4E9]">
           {items.map((item) => {
-            const confidence = formatConfidence(item.confidence)
+            const problem = failureLabel(item.failureCode)
             return (
               <tr key={item.id} className="transition duration-150 hover:bg-[#F8F9FB]">
                 <td className="px-3 py-3">
@@ -91,7 +91,13 @@ function PendingExtractionsTable({ items, onReview }) {
                 <td className="px-3 py-3 text-xs text-[#16181D]">
                   {item.suggestedDocumentNumber || <span className="text-[#9CA3AF]">Not detected</span>}
                 </td>
-                <td className="px-3 py-3 text-xs tabular-nums text-[#6B7280]">{confidence ?? '—'}</td>
+                <td className="px-3 py-3 text-xs">
+                  {problem ? (
+                    <StatusPill label={problem} tone="warning" />
+                  ) : (
+                    <span className="text-[#6B7280]">Read</span>
+                  )}
+                </td>
                 <td className="px-3 py-3 text-xs text-[#6B7280]">{formatDateTime(item.createdAt) ?? '—'}</td>
                 <td className="px-3 py-3">
                   <StatusPill label={item.status} tone={extractionStatusTone(item.status)} />

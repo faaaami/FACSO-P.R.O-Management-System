@@ -6,29 +6,20 @@ import Drawer from '../client/documents/Drawer'
 import LoadingState from '../client/LoadingState'
 import ErrorState from '../client/ErrorState'
 import FormField, { inputClass, inputErrorClass } from '../client/settings/FormField'
-import StatusPill from '../client/StatusPill'
 import { DOCUMENT_TYPES } from '../client/enumLabels'
 import DocumentDetailsFields from './DocumentDetailsFields'
+import ExtractedFieldHint from './ExtractedFieldHint'
 import {
   DOCUMENT_NUMBER_LIMIT,
   OWNER_KIND,
   buildConfirmPayload,
   buildConfirmSchema,
-  formatConfidence,
+  fieldResult,
   prefillFromExtraction,
   prefillSuggestedDetails,
 } from './documentExtractionForm'
 import { formatFileSize } from '../agent/documents/documentDisplay'
 import { extractApiErrorMessage } from '../../utils/apiError'
-
-/** Neutral below 60%, warning below 85%, success at or above it. */
-function confidenceTone(confidence) {
-  const numeric = typeof confidence === 'string' ? Number(confidence) : confidence
-  if (typeof numeric !== 'number' || Number.isNaN(numeric)) return 'neutral'
-  if (numeric >= 0.85) return 'success'
-  if (numeric >= 0.6) return 'warning'
-  return 'danger'
-}
 
 /**
  * Flattens a Zod error into React Hook Form's error shape, keyed by field path.
@@ -250,8 +241,8 @@ function DocumentExtractionReviewDrawer({
     )
   }
 
-  const confidence = formatConfidence(draft?.confidence)
   const status = draft?.status
+  const failure = draft?.failure ?? null
 
   return (
     <Drawer
@@ -277,12 +268,6 @@ function DocumentExtractionReviewDrawer({
                 {formatFileSize(draft?.fileSize) ? ` · ${formatFileSize(draft.fileSize)}` : ''}
               </p>
             </div>
-            {confidence && (
-              <StatusPill
-                label={`${confidence} confidence`}
-                tone={confidenceTone(draft?.confidence)}
-              />
-            )}
           </div>
 
           <p className="mt-3 flex items-start gap-1.5 text-xs leading-relaxed text-[#6B7280]">
@@ -299,6 +284,21 @@ function DocumentExtractionReviewDrawer({
             </span>
           </p>
         </div>
+
+        {failure && (
+          <div
+            role="status"
+            className="flex items-start gap-2.5 rounded-[10px] border border-amber-200 bg-amber-50/70 px-3.5 py-3"
+          >
+            <AlertCircle
+              size={15}
+              strokeWidth={2}
+              className="mt-0.5 shrink-0 text-[#B45309]"
+              aria-hidden="true"
+            />
+            <p className="text-xs font-medium leading-relaxed text-[#92400E]">{failure.message}</p>
+          </div>
+        )}
 
         {filePanel}
 
@@ -358,6 +358,7 @@ function DocumentExtractionReviewDrawer({
                     disabled={isPending}
                     {...register('documentNumber')}
                   />
+                  <ExtractedFieldHint result={fieldResult(draft, 'documentNumber')} />
                 </FormField>
 
                 <FormField
@@ -372,6 +373,7 @@ function DocumentExtractionReviewDrawer({
                     disabled={isPending}
                     {...register('issueDate', { setValueAs: (v) => (v === '' ? undefined : v) })}
                   />
+                  <ExtractedFieldHint result={fieldResult(draft, 'issueDate')} />
                 </FormField>
 
                 <FormField
@@ -386,6 +388,7 @@ function DocumentExtractionReviewDrawer({
                     disabled={isPending}
                     {...register('expiryDate', { setValueAs: (v) => (v === '' ? undefined : v) })}
                   />
+                  <ExtractedFieldHint result={fieldResult(draft, 'expiryDate')} />
                 </FormField>
               </div>
 
@@ -435,6 +438,7 @@ function DocumentExtractionReviewDrawer({
                 </div>
               ) : (
                 <DocumentDetailsFields
+                  fieldResults={selectedType === draft?.suggestedType ? draft?.fields : null}
               fields={fields}
               register={register}
               errors={errors}
