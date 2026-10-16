@@ -13,5 +13,9 @@ public sealed class ExtractDocumentCommandValidator
             x => x.ContentType,
             x => x.FileSize,
             x => x.FileStream);
+
+        RuleFor(x => x.DocumentType)
+            .IsInEnum()
+            .WithMessage("Choose a valid document type before uploading.");
     }
 }

@@ -11,33 +11,6 @@ namespace PROManagementSystem.Tests.Extraction;
 /// </summary>
 internal static class ExtractionStubs
 {
-    internal sealed class StubDocumentClassifier : IDocumentClassifier
-    {
-        public Func<string, CancellationToken, DocumentClassificationResult>
-            ClassifyImpl { get; set; } =
-                (_, _) => new DocumentClassificationResult(null, 0m);
-
-        public Exception? ExceptionToThrow { get; set; }
-
-        public List<string> ReceivedTexts { get; } = new();
-
-        public Task<DocumentClassificationResult> ClassifyAsync(
-            string? text,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (ExceptionToThrow is not null)
-            {
-                throw ExceptionToThrow;
-            }
-
-            var effective = text ?? string.Empty;
-            ReceivedTexts.Add(effective);
-
-            return Task.FromResult(ClassifyImpl(effective, cancellationToken));
-        }
-    }
     internal sealed class StubPdfTextExtractor : IPdfTextExtractor
     {
         public PdfTextExtractionResult Result { get; set; } =

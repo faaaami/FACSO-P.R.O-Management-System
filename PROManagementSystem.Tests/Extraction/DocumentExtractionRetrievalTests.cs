@@ -67,7 +67,11 @@ public class DocumentExtractionRetrievalTests : IntegrationTestBase
                     SuggestedExpiryDate =
                         new DateTime(2032, 1, 1, 0, 0, 0, DateTimeKind.Utc),
                     SuggestedOwnerType = "Employee",
-                    Confidence = 0.87m,
+                    FieldResults =
+                        "{\"documentNumber\":{\"value\":\"SUG-001\",\"source\":\"Mrz\"," +
+                        "\"errors\":[\"Check digit does not match.\"],\"warnings\":[]}}",
+                    FailureCode = "MRZ_CHECK_FAILED",
+                    FailureMessage = "Some check digits don't match.",
                     Status = status,
                     ExpiresAt = expiresAt.HasValue
                         ? Normalize(expiresAt.Value)
@@ -94,6 +98,7 @@ public class DocumentExtractionRetrievalTests : IntegrationTestBase
 
         using var form = new MultipartFormDataContent();
         form.Add(file, "file", "upload.pdf");
+        form.Add(new StringContent("Passport"), "documentType");
 
         var request = new HttpRequestMessage(
             HttpMethod.Post,
@@ -176,7 +181,13 @@ public class DocumentExtractionRetrievalTests : IntegrationTestBase
             new DateTime(2032, 1, 1, 0, 0, 0, DateTimeKind.Utc),
             data.SuggestedExpiryDate);
         Assert.Equal("Employee", data.SuggestedOwnerType);
-        Assert.Equal(0.87m, data.Confidence);
+        var number = Assert.Contains("documentNumber", data.Fields);
+        Assert.Equal("SUG-001", number.Value);
+        Assert.Equal("Mrz", number.Source);
+        Assert.Equal("Check digit does not match.", Assert.Single(number.Errors));
+        Assert.Empty(number.Warnings);
+        Assert.Equal("MRZ_CHECK_FAILED", data.Failure?.Code);
+        Assert.Equal("Some check digits don't match.", data.Failure?.Message);
         Assert.Equal("Pending", data.Status);
         Assert.Equal(expiresAt, data.ExpiresAt);
     }
@@ -463,10 +474,30 @@ public class DocumentExtractionRetrievalTests : IntegrationTestBase
 
         public string? SuggestedOwnerType { get; set; }
 
-        public decimal Confidence { get; set; }
+        public Dictionary<string, FieldDto> Fields { get; set; } = new();
+
+        public FailureDto? Failure { get; set; }
 
         public string Status { get; set; } = string.Empty;
 
         public DateTime? ExpiresAt { get; set; }
+    }
+
+    private sealed class FieldDto
+    {
+        public string? Value { get; set; }
+
+        public string Source { get; set; } = string.Empty;
+
+        public List<string> Errors { get; set; } = new();
+
+        public List<string> Warnings { get; set; } = new();
+    }
+
+    private sealed class FailureDto
+    {
+        public string Code { get; set; } = string.Empty;
+
+        public string Message { get; set; } = string.Empty;
     }
 }

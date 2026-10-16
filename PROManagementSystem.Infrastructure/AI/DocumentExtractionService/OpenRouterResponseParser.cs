@@ -10,7 +10,7 @@ namespace PROManagementSystem.Infrastructure.AI.DocumentExtractionService;
 /// <summary>
 /// Task 7C.3.2: the structured parser for OpenRouter model responses. It turns
 /// one raw <see cref="OpenRouterRawResponse"/> into the existing
-/// <see cref="DocumentExtractionResult"/> suggestion draft.
+/// <see cref="AiParsedExtraction"/> suggestion draft.
 ///
 /// The OpenRouter chat/completions envelope is NOT the extraction object: the
 /// model's logical JSON is extracted from
@@ -33,7 +33,7 @@ namespace PROManagementSystem.Infrastructure.AI.DocumentExtractionService;
 /// never copies into the result) the raw model response, the document text, or
 /// any credential. The result carries only the structured suggestions.
 ///
-/// Confidence contract: the established <see cref="DocumentExtractionResult"/>
+/// Confidence contract: the established <see cref="AiParsedExtraction"/>
 /// field is a single value. Per the 7C.3.2 combination rule, a well-formed
 /// in-range model confidence is preferred; otherwise the classifier's
 /// confidence is retained. Either way the returned value is validated into
@@ -56,7 +56,7 @@ internal sealed class OpenRouterResponseParser : IOpenRouterResponseParser
         _validator = validator;
     }
 
-    public DocumentExtractionResult Parse(
+    public AiParsedExtraction Parse(
         OpenRouterRawResponse raw,
         DocumentType? detectedType,
         decimal classificationConfidence)
@@ -123,7 +123,7 @@ internal sealed class OpenRouterResponseParser : IOpenRouterResponseParser
     /// case-insensitively to tolerate model casing drift; the exact contract
     /// names are always tried first.
     /// </summary>
-    private DocumentExtractionResult Map(
+    private AiParsedExtraction Map(
         JsonElement root,
         decimal classificationConfidence)
     {
@@ -165,7 +165,7 @@ internal sealed class OpenRouterResponseParser : IOpenRouterResponseParser
         var details = ReadDetails(root, type.Value);
         var confidence = ReadConfidence(root, classificationConfidence);
 
-        return new DocumentExtractionResult(
+        return new AiParsedExtraction(
             type,
             documentNumber,
             issueDate,
@@ -455,6 +455,6 @@ internal sealed class OpenRouterResponseParser : IOpenRouterResponseParser
         return propertyName["Details.".Length..];
     }
 
-    private static DocumentExtractionResult Neutral()
+    private static AiParsedExtraction Neutral()
         => new(null, null, null, null, null, 0m);
 }

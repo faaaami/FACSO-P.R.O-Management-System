@@ -215,6 +215,7 @@ public class Task73ApiEnrichmentTests : IntegrationTestBase
 
         using var form = new MultipartFormDataContent();
         form.Add(file, "file", "upload.pdf");
+        form.Add(new StringContent("Passport"), "documentType");
 
         var request = new HttpRequestMessage(
             HttpMethod.Post,
@@ -898,18 +899,18 @@ public class Task73ApiEnrichmentTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "Agent extract POST response exposes suggestedDetails as the empty JSON object")]
+        "Agent extract POST response exposes the Mock's schema-field suggestions")]
     public async Task Agent_Extract_ResponseIncludesEmptySuggestedDetails()
     {
         var json = await ExtractAsync("agent", TestDataSeeder.Ids.AgentA, "Agent");
 
         AssertDetailsEqual(
-            "{}",
+            MockPassportDetails,
             Navigate(json, "data", "suggestedDetails"));
     }
 
     [Fact(DisplayName =
-        "Agent extraction GET exposes suggestedDetails as the empty JSON object")]
+        "Agent extraction GET exposes the Mock's schema-field suggestions")]
     public async Task Agent_GetExtraction_ExposesEmptySuggestedDetails()
     {
         var json = await ExtractAsync("agent", TestDataSeeder.Ids.AgentA, "Agent");
@@ -923,7 +924,12 @@ public class Task73ApiEnrichmentTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         AssertDetailsEqual(
-            "{}",
+            MockPassportDetails,
             Navigate(await response.Content.ReadAsStringAsync(), "data", "suggestedDetails"));
     }
+
+    // The Mock fills issue and expiry dates; for a Passport these are schema
+    // fields, so they also appear in the details, as MRZ-read dates do.
+    private const string MockPassportDetails =
+        "{\"issueDate\":\"2026-01-01\",\"expiryDate\":\"2031-01-01\"}";
 }

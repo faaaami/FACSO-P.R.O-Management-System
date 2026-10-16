@@ -29,12 +29,12 @@ using PROManagementSystem.Application.Common.Services;
 using PROManagementSystem.Application.Common.DocumentSchemas;
 using PROManagementSystem.Application.Common.Validation;
 using PROManagementSystem.Infrastructure.AI;
-using PROManagementSystem.Infrastructure.AI.DocumentClassification;
 using PROManagementSystem.Infrastructure.AI.DocumentClassification.RuleBasedSchemas;
 using PROManagementSystem.Infrastructure.AI.DocumentExtractionService;
 using PROManagementSystem.Infrastructure.Common;
 using PROManagementSystem.Infrastructure.Email;
 using PROManagementSystem.Infrastructure.Extraction;
+using PROManagementSystem.Infrastructure.Extraction.Mrz;
 using PROManagementSystem.Infrastructure.Identity;
 using PROManagementSystem.Infrastructure.Persistence;
 using PROManagementSystem.Infrastructure.Persistence.Repositories;
@@ -448,7 +448,6 @@ builder.Services.Configure<OpenRouterOptions>(
 builder.Services.AddOpenRouterExtractionProvider();
 
 builder.Services.AddScoped<MockDocumentExtractionService>();
-builder.Services.AddScoped<LocalDocumentExtractionService>();
 builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
 builder.Services.AddScoped<IImageOcrExtractor, TesseractImageOcrExtractor>();
 builder.Services.AddScoped<IPdfPageRenderer, PdfiumPdfPageRenderer>();
@@ -461,18 +460,11 @@ builder.Services.AddSingleton<IImagePreprocessor>(
     provider => provider.GetRequiredService<ImagePreprocessor>());
 builder.Services.AddSingleton<IUploadImageConverter>(
     provider => provider.GetRequiredService<ImagePreprocessor>());
-builder.Services.AddScoped<ScannedPdfOcrService>();
 
 // Process-wide cap on simultaneous heavy OCR operations (Task 6B.7). The gate
 // is shared by every Local extraction so concurrent scans queue for a slot,
 // regardless of which request scope owns the current operation.
 builder.Services.AddSingleton<OcrWorkloadGate>();
-
-// Deterministic document classifier used by the Local extraction provider
-// (Task 6C). Stateless so singleton is correct.
-builder.Services.AddSingleton<
-    IDocumentClassifier,
-    RuleBasedDocumentClassifier>();
 
 // Deterministic type-specific document field schemas (Task 7B.1). Static
 // immutable metadata so singleton is correct.
@@ -491,12 +483,22 @@ builder.Services.AddSingleton<
     IDocumentDetailsExtractor,
     RuleBasedDocumentDetailsExtractor>();
 
-// "Extraction:Provider" selects the provider (default "Mock"); provider names
-// compare case-insensitively, matching the configuration conventions used
-// across the codebase.
-// "Local" runs the in-process extractor that reads the text layer of
-// selectable PDFs (Task 6B.3), recognises raster JPEG/PNG images (6B.4) and
-// rasterises scanned PDFs through local OCR (Task 6B.5).
+// "Extraction:Provider" selects the provider, compared case-insensitively:
+//   Mock  (default) fixed placeholder values, for development and tests.
+//   Local the DocumentExtractionPipeline: MRZ for passports and Emirates
+//         IDs, OCR text for other types, optional AI.
+//   OpenRouter is accepted as a legacy alias for Local with AI enabled.
+// AI is off unless Extraction:Ai:Enabled is true (or the legacy alias is
+// used); enabling it requires complete Extraction:OpenRouter settings, and
+// an incomplete configuration fails loudly rather than silently skipping AI.
+builder.Services.Configure<ExtractionAiOptions>(
+    builder.Configuration.GetSection(ExtractionAiOptions.SectionName));
+
+builder.Services.AddScoped<MrzReader>();
+
+// Shared by the Admin and Agent extract commands.
+builder.Services.AddScoped<PROManagementSystem.Application.Documents.Common.ExtractionDraftCreator>();
+
 builder.Services.AddScoped<IDocumentExtractionService>(serviceProvider =>
 {
     var provider = serviceProvider
@@ -504,25 +506,30 @@ builder.Services.AddScoped<IDocumentExtractionService>(serviceProvider =>
         .Value
         .Provider;
 
-    var selectsLocal = OcrOptions.ProviderLocal.Equals(
+    var isLegacyOpenRouter = OcrOptions.ProviderOpenRouter.Equals(
         provider,
         StringComparison.OrdinalIgnoreCase);
 
-    if (selectsLocal)
+    var isLocal = isLegacyOpenRouter || OcrOptions.ProviderLocal.Equals(
+        provider,
+        StringComparison.OrdinalIgnoreCase);
+
+    if (!isLocal)
     {
-        return serviceProvider.GetRequiredService<LocalDocumentExtractionService>();
+        return serviceProvider.GetRequiredService<MockDocumentExtractionService>();
     }
 
-    var selectsOpenRouter = OcrOptions.ProviderOpenRouter.Equals(
-        provider,
-        StringComparison.OrdinalIgnoreCase);
+    var aiEnabled = isLegacyOpenRouter || serviceProvider
+        .GetRequiredService<IOptions<ExtractionAiOptions>>()
+        .Value
+        .Enabled;
 
-    if (selectsOpenRouter)
+    IAiFieldExtractor? ai = null;
+
+    if (aiEnabled)
     {
-        // Task 7C.3.1: OpenRouter is opt-in. An incomplete or unconfigured
-        // selection is a configuration error, never a silent fallback to the
-        // Mock provider. The missing settings are named; values — including
-        // the API key — are never logged or echoed.
+        // Values (including the API key) are never logged or echoed; only
+        // the names of missing settings.
         var openRouter = serviceProvider
             .GetRequiredService<IOptions<OpenRouterOptions>>()
             .Value;
@@ -547,16 +554,18 @@ builder.Services.AddScoped<IDocumentExtractionService>(serviceProvider =>
         if (missing.Count > 0)
         {
             throw new InvalidOperationException(
-                "The OpenRouter extraction provider is selected but its " +
+                "AI extraction (the OpenRouter extraction provider) is enabled but its " +
                 "configuration is incomplete. Missing settings: " +
                 string.Join(", ", missing) +
-                ". Configure them before enabling the OpenRouter provider.");
+                ". Configure them before enabling the OpenRouter provider, or set Extraction:Ai:Enabled to false.");
         }
 
-        return serviceProvider.GetRequiredService<OpenRouterDocumentExtractionService>();
+        ai = serviceProvider.GetRequiredService<OpenRouterDocumentExtractionService>();
     }
 
-    return serviceProvider.GetRequiredService<MockDocumentExtractionService>();
+    return ai is null
+        ? ActivatorUtilities.CreateInstance<DocumentExtractionPipeline>(serviceProvider)
+        : ActivatorUtilities.CreateInstance<DocumentExtractionPipeline>(serviceProvider, ai);
 });
 
 // ========================================

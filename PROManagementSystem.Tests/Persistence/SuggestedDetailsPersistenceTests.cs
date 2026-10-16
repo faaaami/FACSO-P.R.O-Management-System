@@ -106,7 +106,6 @@ public class SuggestedDetailsPersistenceTests : IntegrationTestBase
                 SuggestedExpiryDate = new DateTime(2034, 1, 14, 0, 0, 0, DateTimeKind.Utc),
                 SuggestedOwnerType = "Employee",
                 SuggestedDetails = suggestedJson,
-                Confidence = 0.9876m,
                 Status = "Pending",
                 ExpiresAt = DateTime.UtcNow.AddHours(1),
                 CreatedAt = DateTime.UtcNow,
@@ -127,7 +126,6 @@ public class SuggestedDetailsPersistenceTests : IntegrationTestBase
 
             // The lifecycle fields survive untouched alongside the JSON.
             Assert.Equal(DocumentType.Passport, stored.SuggestedType);
-            Assert.Equal(0.9876m, stored.Confidence);
             Assert.Equal("Pending", stored.Status);
             Assert.Equal("Employee", stored.SuggestedOwnerType);
         }
@@ -147,7 +145,6 @@ public class SuggestedDetailsPersistenceTests : IntegrationTestBase
                 FileName = "visa.pdf",
                 ContentType = "application/pdf",
                 FileSize = 1024,
-                Confidence = 0.5m,
                 Status = "Pending",
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -181,11 +178,11 @@ public class SuggestedDetailsPersistenceTests : IntegrationTestBase
                 """
                 INSERT INTO document_extractions
                     ("Id", "FileName", "ContentType", "FileSize",
-                     "Confidence", "Status", "CreatedAt", "UpdatedAt",
+                     "Status", "CreatedAt", "UpdatedAt",
                      "IsDeleted")
                 VALUES
                     ({0}, 'legacy-scan.pdf', 'application/pdf', 512,
-                     0.75, 'Pending', {1}, {1}, false);
+                     'Pending', {1}, {1}, false);
                 """,
                 extractionId,
                 now);
@@ -225,7 +222,6 @@ public class SuggestedDetailsPersistenceTests : IntegrationTestBase
                     ContentType = "application/pdf",
                     FileSize = 128,
                     SuggestedDetails = suggestedJson,
-                    Confidence = 0.6m,
                     Status = "Pending",
                     ExpiresAt = now.AddHours(1),
                     CreatedAt = now,
@@ -239,7 +235,6 @@ public class SuggestedDetailsPersistenceTests : IntegrationTestBase
                     ContentType = "application/pdf",
                     FileSize = 256,
                     SuggestedDetails = suggestedJson,
-                    Confidence = 0.9m,
                     Status = "Pending",
                     ExpiresAt = now.AddDays(-1),
                     CreatedAt = now,

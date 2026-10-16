@@ -78,6 +78,7 @@ public class ExtractionFileDownloadTests : IntegrationTestBase
 
         var form = new MultipartFormDataContent();
         form.Add(file, "file", fileName);
+        form.Add(new StringContent("Passport"), "documentType");
         return form;
     }
 

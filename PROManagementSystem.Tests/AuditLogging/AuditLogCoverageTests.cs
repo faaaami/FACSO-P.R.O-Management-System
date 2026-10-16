@@ -135,7 +135,6 @@ public class AuditLogCoverageTests : IntegrationTestBase
                     SuggestedIssueDate = null,
                     SuggestedExpiryDate = null,
                     SuggestedOwnerType = "Employee",
-                    Confidence = 0.95m,
                     Status = "Pending",
                     ExpiresAt = now.AddHours(24),
                     CreatedBy = createdBy,
@@ -472,6 +471,7 @@ public class AuditLogCoverageTests : IntegrationTestBase
                 "application/pdf");
 
         form.Add(fileContent, "file", "sample.pdf");
+        form.Add(new StringContent("Passport"), "documentType");
 
         var response = await ScopeClient.SendAsync(
             ApplyScope(

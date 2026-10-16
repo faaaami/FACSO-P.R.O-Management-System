@@ -5,115 +5,72 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PROManagementSystem.Application.Common.Interfaces;
+using System.Globalization;
 using PROManagementSystem.Domain.Enums;
-using PROManagementSystem.Infrastructure.AI.DocumentClassification;
+using PROManagementSystem.Infrastructure.Extraction;
 
 namespace PROManagementSystem.Infrastructure.AI.DocumentExtractionService;
 
 /// <summary>
-/// Task 7C.3.1: the OpenRouter extraction provider HTTP foundation. It
-/// recovers the document text through the existing OCR/PDF pipeline
-/// (<see cref="IDocumentTextRecoveryService"/>), classifies it with the
-/// existing deterministic classifier, builds the prompt through
-/// <see cref="OpenRouterPromptBuilder"/> (which reuses the schema provider),
-/// and POSTs an OpenRouter chat/completions-compatible request to the
-/// configured endpoint. Each successful 2xx response reaches the internal
-/// raw-response boundary (<see cref="OpenRouterRawResponse"/>) for the
-/// structured parser (Task 7C.3.2); today the placeholder parser returns a
-/// neutral result so the extraction pipeline stays fail-soft.
+/// The optional AI step of the extraction pipeline (Extraction:Ai:Enabled).
+/// Recognised text and the staff-selected document type are turned into a
+/// prompt by <see cref="OpenRouterPromptBuilder"/>, POSTed to an OpenRouter
+/// chat/completions endpoint, and the reply is parsed by
+/// <see cref="OpenRouterResponseParser"/> into schema-validated values.
 ///
-/// Fail-soft contract: transport failures (429, 5xx, other 4xx, network
-/// errors, timeouts, empty bodies) never fail the request — the provider logs
-/// a controlled warning (status only) and returns a neutral result so the
-/// stored file remains and the DocumentExtraction can still become a Pending
-/// draft with neutral suggestions. Caller cancellation is never swallowed and
-/// propagates untouched. Configuration errors surface before any HTTP call.
-///
-/// Security/privacy boundary: the request body carries only model, prompts,
-/// and max_tokens. It never contains user/client/employee/extraction IDs, file
-/// paths, storage URLs, database data, or API keys. The API key travels only
-/// in the Authorization bearer header and is never logged. Neither the
-/// document text nor the raw model response is ever logged, stored, or
-/// surfaced through the API.
+/// Fail-soft: transport failures (429, 5xx, other 4xx, network errors,
+/// timeouts, empty bodies) return <see cref="AiFieldExtraction.Unavailable"/>
+/// and log only the status or timeout, never text, values or the API key.
+/// Caller cancellation is never swallowed. Retries are configured on the
+/// HttpClient (see <see cref="OpenRouterExtractionServiceExtensions"/>).
 /// </summary>
 public sealed class OpenRouterDocumentExtractionService
-    : IDocumentExtractionService, IDisposable
+    : IAiFieldExtractor, IDisposable
 {
     private const string ChatCompletionsPath = "chat/completions";
 
-    // Task 7C.3.4 fallback. It is only used when MaxInputCharacters is 0 or
-    // negative, so a misconfiguration can never disable the bound.
     private const int DefaultMaxInputCharacters = 20_000;
 
-    // Appended after a deterministic truncation so the model is explicitly
-    // told the recovered text was cut off; the notice is part of the bounded
-    // payload, never an addition on top of the limit.
     private const string TruncationNotice = "\n\n[document text truncated]";
-
-    private static readonly DocumentExtractionResult NeutralResult =
-        new(null, null, null, null, null, 0m);
 
     private readonly HttpClient _httpClient;
     private readonly OpenRouterOptions _options;
     private readonly OpenRouterPromptBuilder _promptBuilder;
-    private readonly IDocumentClassifier _classifier;
-    private readonly IDocumentTextRecoveryService _textRecovery;
     private readonly IOpenRouterResponseParser _parser;
     private readonly ILogger<OpenRouterDocumentExtractionService> _logger;
 
-    // The constructor is internal so the provider's seams (text recovery and
-    // response parsing) stay internal until 7C.3.2. DI instantiates it through
-    // the explicit factory in OpenRouterExtractionServiceExtensions (which owns
-    // the named HttpClient); the test project discovers it via the
-    // InternalsVisibleTo seam.
     internal OpenRouterDocumentExtractionService(
         HttpClient httpClient,
         IOptions<OpenRouterOptions> options,
         OpenRouterPromptBuilder promptBuilder,
-        IDocumentClassifier classifier,
-        IDocumentTextRecoveryService textRecovery,
         IOpenRouterResponseParser parser,
         ILogger<OpenRouterDocumentExtractionService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
         _promptBuilder = promptBuilder;
-        _classifier = classifier;
-        _textRecovery = textRecovery;
         _parser = parser;
         _logger = logger;
     }
 
-    public async Task<DocumentExtractionResult> ExtractAsync(
-        Stream document,
-        string contentType,
+    /// <summary>
+    /// Sends recognised text for the staff-selected type to the configured
+    /// model and returns the values it found. Never throws for service
+    /// failures: timeouts, transport errors, non-success statuses and
+    /// unusable responses return <see cref="AiFieldExtraction.Unavailable"/>.
+    /// Only the status code or timeout is logged, never text or values.
+    /// </summary>
+    public async Task<AiFieldExtraction> ExtractAsync(
+        string documentText,
+        DocumentType documentType,
         CancellationToken cancellationToken)
     {
-        var recoveredText = await _textRecovery.RecoverAsync(
-            document,
-            contentType,
-            cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(recoveredText))
+        if (string.IsNullOrWhiteSpace(documentText))
         {
-            // No usable text means nothing to send to the model; degrade to a
-            // neutral draft rather than failing the request.
-            return NeutralResult;
+            return new AiFieldExtraction(true, new Dictionary<string, string>());
         }
 
-        // Task 7C.3.4: bound the payload before classification and prompt
-        // building so a pathological document cannot produce an unbounded
-        // request (and unbounded cost). Truncation is deterministic and the
-        // model is told the text was cut off.
-        var boundedText = BoundInput(recoveredText);
-
-        var classification = await _classifier.ClassifyAsync(
-            boundedText,
-            cancellationToken);
-
-        var prompt = _promptBuilder.Build(
-            boundedText,
-            classification.Type);
+        var prompt = _promptBuilder.Build(BoundInput(documentText), documentType);
 
         OpenRouterRawResponse raw;
 
@@ -124,60 +81,74 @@ public sealed class OpenRouterDocumentExtractionService
         catch (OperationCanceledException)
             when (!cancellationToken.IsCancellationRequested)
         {
-            // HttpClient.Timeout (RequestTimeoutSeconds) fired, not the caller.
-            // Treat the slow model response as a controlled degradation.
             _logger.LogWarning(
                 "OpenRouter extraction timed out after {TimeoutSeconds}s.",
                 _options.RequestTimeoutSeconds);
-            return NeutralResult;
+
+            return AiFieldExtraction.Unavailable;
         }
         catch (HttpRequestException ex)
         {
-            // Network/transport failure, or the upstream body exceeded
-            // MaxResponseContentBufferSize. Log only the transport-level
-            // message (never the request body or any response body) and
-            // degrade. Because HttpClient buffers the body after the
-            // resilience pipeline has returned, an oversized body is not
-            // retried (no repeated paid model calls).
             _logger.LogWarning(
                 ex,
                 "OpenRouter extraction failed with a transport error.");
-            return NeutralResult;
+
+            return AiFieldExtraction.Unavailable;
         }
 
-        if (!raw.IsSuccessStatusCode)
+        if (!raw.IsSuccessStatusCode || string.IsNullOrWhiteSpace(raw.JsonContent))
         {
             _logger.LogWarning(
                 "OpenRouter extraction failed: statusCode={StatusCode}.",
                 (int)raw.StatusCode);
-            return NeutralResult;
+
+            return AiFieldExtraction.Unavailable;
         }
 
-        if (string.IsNullOrWhiteSpace(raw.JsonContent))
-        {
-            _logger.LogWarning(
-                "OpenRouter extraction returned an empty response: " +
-                "statusCode={StatusCode}.",
-                (int)raw.StatusCode);
-            return NeutralResult;
-        }
+        var parsed = _parser.Parse(raw, documentType, 0m);
 
-        // 2xx raw response reaches the internal parsing boundary. The
-        // placeholder parser keeps the suggestion neutral until 7C.3.2.
-        return _parser.Parse(
-            raw,
-            classification.Type,
-            classification.Confidence);
+        return new AiFieldExtraction(true, ToValues(parsed));
     }
 
-    /// <summary>
-    /// The HTTP transport. Builds and dispatches the chat/completions POST and
-    /// returns the raw response to the internal boundary. Does not log the
-    /// request body, the response body, or the API key, and never aborts on a
-    /// caller cancellation (it propagates). Retry semantics are applied by the
-    /// DI-resilience pipeline configured around the named <see cref="HttpClient"/>;
-    /// this method itself performs exactly one attempt.
-    /// </summary>
+    private static IReadOnlyDictionary<string, string> ToValues(AiParsedExtraction parsed)
+    {
+        var values = new Dictionary<string, string>();
+
+        if (!string.IsNullOrWhiteSpace(parsed.DocumentNumber))
+        {
+            values["documentNumber"] = parsed.DocumentNumber;
+        }
+
+        if (parsed.IssueDate is { } issue)
+        {
+            values["issueDate"] = issue.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+
+        if (parsed.ExpiryDate is { } expiry)
+        {
+            values["expiryDate"] = expiry.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+
+        foreach (var (key, value) in parsed.Details ?? new Dictionary<string, object?>())
+        {
+            var text = value switch
+            {
+                null => null,
+                string s => s,
+                bool b => b ? "true" : "false",
+                IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+                _ => value.ToString()
+            };
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                values[key] = text;
+            }
+        }
+
+        return values;
+    }
+
     internal async Task<OpenRouterRawResponse> SendRawAsync(
         OpenRouterPrompt prompt,
         CancellationToken cancellationToken)

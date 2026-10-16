@@ -65,7 +65,6 @@ public class ConfirmationConcurrencyTests : IntegrationTestBase
                     SuggestedIssueDate = null,
                     SuggestedExpiryDate = null,
                     SuggestedOwnerType = "Employee",
-                    Confidence = 0.95m,
                     Status = status,
                     ExpiresAt = now.AddHours(expiresInHours),
                     CreatedBy = createdBy,

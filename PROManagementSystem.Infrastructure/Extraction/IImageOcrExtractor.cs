@@ -10,6 +10,17 @@ public interface IImageOcrExtractor
     Task<OcrTextExtractionResult> ExtractAsync(
         Stream imageStream,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// OCR with recognition options (e.g. MRZ: a character whitelist and a
+    /// single text block). Implementations without option support fall back
+    /// to plain recognition.
+    /// </summary>
+    Task<OcrTextExtractionResult> ExtractAsync(
+        Stream imageStream,
+        OcrRecognitionOptions options,
+        CancellationToken cancellationToken = default)
+        => ExtractAsync(imageStream, cancellationToken);
 }
 
 /// <summary>
@@ -19,3 +30,13 @@ public interface IImageOcrExtractor
 public sealed record OcrTextExtractionResult(
     string Text,
     bool HasUsableText);
+
+/// <param name="CharacterWhitelist">Only these characters are recognised.</param>
+/// <param name="SingleBlock">Treat the image as one uniform block of text.</param>
+public sealed record OcrRecognitionOptions(
+    string? CharacterWhitelist = null,
+    bool SingleBlock = false)
+{
+    public static readonly OcrRecognitionOptions Mrz =
+        new("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<", SingleBlock: true);
+}

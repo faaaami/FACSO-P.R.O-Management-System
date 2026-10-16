@@ -25,8 +25,14 @@ public sealed class TesseractImageOcrExtractor : IImageOcrExtractor
         _options = options.Value;
     }
 
+    public Task<OcrTextExtractionResult> ExtractAsync(
+        Stream imageStream,
+        CancellationToken cancellationToken = default)
+        => ExtractAsync(imageStream, new OcrRecognitionOptions(), cancellationToken);
+
     public async Task<OcrTextExtractionResult> ExtractAsync(
         Stream imageStream,
+        OcrRecognitionOptions options,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -69,12 +75,13 @@ public sealed class TesseractImageOcrExtractor : IImageOcrExtractor
         ConfigureNativeSearchPath();
 
         return await Task.Run(
-            () => Recognize(bytes, cancellationToken),
+            () => Recognize(bytes, options, cancellationToken),
             cancellationToken);
     }
 
     private OcrTextExtractionResult Recognize(
         byte[] bytes,
+        OcrRecognitionOptions options,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -94,7 +101,14 @@ public sealed class TesseractImageOcrExtractor : IImageOcrExtractor
                 return new OcrTextExtractionResult(string.Empty, false);
             }
 
-            using var page = engine.Process(image, PageSegMode.Auto);
+            if (!string.IsNullOrEmpty(options.CharacterWhitelist))
+            {
+                engine.SetVariable("tessedit_char_whitelist", options.CharacterWhitelist);
+            }
+
+            using var page = engine.Process(
+                image,
+                options.SingleBlock ? PageSegMode.SingleBlock : PageSegMode.Auto);
 
             var text = page.Text ?? string.Empty;
 

@@ -1,3 +1,4 @@
+using PROManagementSystem.Application.Documents.Common;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Helpers;
@@ -55,9 +56,12 @@ public sealed class GetAgentDocumentExtractionQueryHandler
             extraction.SuggestedIssueDate,
             extraction.SuggestedExpiryDate,
             extraction.SuggestedOwnerType,
-            extraction.Confidence,
             extraction.Status,
             extraction.ExpiresAt,
-            DetailsJson.FromStorage(extraction.SuggestedDetails));
+            DetailsJson.FromStorage(extraction.SuggestedDetails),
+            ExtractionFieldResults.FromStorage(extraction.FieldResults),
+            ExtractionFieldResults.Failure(
+                extraction.FailureCode,
+                extraction.FailureMessage));
     }
 }

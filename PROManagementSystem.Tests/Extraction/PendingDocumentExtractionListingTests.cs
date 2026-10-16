@@ -41,7 +41,7 @@ public class PendingDocumentExtractionListingTests
         string status = "Pending",
         bool isDeleted = false,
         DocumentType? suggestedType = DocumentType.Passport,
-        decimal confidence = 0.91m)
+        string? failureCode = null)
     {
         var id = Guid.NewGuid();
 
@@ -62,7 +62,7 @@ public class PendingDocumentExtractionListingTests
                 SuggestedExpiryDate = now.AddYears(4),
                 SuggestedOwnerType = "Employee",
                 SuggestedDetails = "{}",
-                Confidence = confidence,
+                FailureCode = failureCode,
                 Status = status,
                 ExpiresAt = now.AddHours(10),
                 CreatedBy = createdBy,
@@ -286,7 +286,7 @@ public class PendingDocumentExtractionListingTests
     {
         var id = await SeedExtractionAsync(
             TestDataSeeder.Ids.AgentA,
-            confidence: 0.87m);
+            failureCode: "MRZ_NOT_FOUND");
 
         var envelope = await ListAsync(
             AdminListUrl,
@@ -301,7 +301,7 @@ public class PendingDocumentExtractionListingTests
         Assert.Equal("Passport", item.SuggestedType);
         Assert.Equal("D1-SUG-001", item.SuggestedDocumentNumber);
         Assert.Equal("Employee", item.SuggestedOwnerType);
-        Assert.Equal(0.87m, item.Confidence);
+        Assert.Equal("MRZ_NOT_FOUND", item.FailureCode);
         Assert.Equal("Pending", item.Status);
         Assert.NotNull(item.ExpiresAt);
         Assert.NotEqual(default, item.CreatedAt);
@@ -502,7 +502,9 @@ public class PendingDocumentExtractionListingTests
             "\"suggestedDocumentNumber\"",
             raw,
             StringComparison.Ordinal);
-        Assert.Contains("\"confidence\"", raw, StringComparison.Ordinal);
+        Assert.Contains("\"fields\"", raw, StringComparison.Ordinal);
+        Assert.Contains("\"failure\"", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"confidence\"", raw, StringComparison.Ordinal);
         Assert.Contains("\"status\"", raw, StringComparison.Ordinal);
     }
 
@@ -573,7 +575,7 @@ public class PendingDocumentExtractionListingTests
 
         public string? SuggestedOwnerType { get; set; }
 
-        public decimal Confidence { get; set; }
+        public string? FailureCode { get; set; }
 
         public string Status { get; set; } = string.Empty;
 

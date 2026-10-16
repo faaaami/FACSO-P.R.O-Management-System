@@ -56,19 +56,19 @@ public class OpenRouterProviderResolutionTests : IntegrationTestBase
     public void Local_IsCaseInsensitive(string provider)
     {
         Assert.Equal(
-            typeof(LocalDocumentExtractionService),
+            typeof(DocumentExtractionPipeline),
             ResolveExtractorType(provider));
     }
 
     [Theory(DisplayName =
-        "OpenRouter selection resolves the OpenRouter provider, any casing")]
+        "OpenRouter (legacy alias) resolves the pipeline with AI enabled, any casing")]
     [InlineData("OpenRouter")]
     [InlineData("openrouter")]
     [InlineData("OPENROUTER")]
     public void OpenRouter_ResolvesProvider(string provider)
     {
         Assert.Equal(
-            typeof(OpenRouterDocumentExtractionService),
+            typeof(DocumentExtractionPipeline),
             ResolveExtractorType(provider, FullOpenRouterConfig));
     }
 
@@ -378,7 +378,10 @@ public class OpenRouterResilienceTests : IntegrationTestBase
         };
     }
 
-    private async Task<DocumentExtractionResult> ExtractAsync(
+    /// <summary>Type is Passport when the AI step returned any value.</summary>
+    private sealed record Outcome(DocumentType? Type);
+
+    private async Task<Outcome> ExtractAsync(
         RecordingHttpMessageHandler handler,
         int maxRetries = 2,
         int? maxResponseBytes = null)
@@ -422,13 +425,13 @@ public class OpenRouterResilienceTests : IntegrationTestBase
         var service = scope.ServiceProvider
             .GetRequiredService<OpenRouterDocumentExtractionService>();
 
-        var pdf = TestPdfBuilder.CreateTextPdf(
-            TestDocumentFixtures.PassportLines());
-
-        return await service.ExtractAsync(
-            new MemoryStream(pdf),
-            "application/pdf",
+        var result = await service.ExtractAsync(
+            string.Join("\n", TestDocumentFixtures.PassportLines()),
+            DocumentType.Passport,
             CancellationToken.None);
+
+        return new Outcome(
+            result.Available && result.Values.Count > 0 ? DocumentType.Passport : null);
     }
 
     /// <summary>

@@ -65,6 +65,7 @@ public class ExtractionOwnershipTests : IntegrationTestBase
 
         using var form = new MultipartFormDataContent();
         form.Add(file, "file", "document.pdf");
+        form.Add(new StringContent("Passport"), "documentType");
         request.Content = form;
 
         var response = await AuthClient.SendAsync(request);

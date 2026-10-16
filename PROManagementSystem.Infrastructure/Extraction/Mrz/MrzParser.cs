@@ -78,6 +78,9 @@ public static class MrzParser
             return false;
         }
 
+        RecoverFieldFillers(l1, 5, 44);
+        RecoverFieldFillers(l2, 28, 42);
+
         // Alphabetic positions: document code, issuing state, name,
         // nationality, sex.
         ToAlpha(l1, 0, 44);
@@ -136,6 +139,10 @@ public static class MrzParser
         {
             return false;
         }
+
+        RecoverFieldFillers(l1, 15, 30);
+        RecoverFieldFillers(l2, 18, 29);
+        RecoverFieldFillers(l3, 0, 30);
 
         ToAlpha(l1, 0, 5);
         ToAlpha(l2, 7, 8);
@@ -217,24 +224,56 @@ public static class MrzParser
             }
         }
 
-        return new string(chars.ToArray());
+        return RecoverFillers(new string(chars.ToArray()));
     }
 
-    private static MrzResult Prefer(MrzResult? current, MrzResult candidate)
+    /// <summary>
+    /// OCR commonly reads runs of the filler '&lt;' as "LLLL" or "KKKK". A
+    /// '&lt;'-separated word made only of L/K (two or more characters) cannot
+    /// be a name or number, so it is turned back into fillers.
+    /// </summary>
+    private static string RecoverFillers(string line)
     {
-        if (current is null)
+        var chars = line.ToCharArray();
+        var i = 0;
+
+        while (i < chars.Length)
         {
-            return candidate;
+            if (chars[i] == '<')
+            {
+                i++;
+                continue;
+            }
+
+            var start = i;
+            while (i < chars.Length && chars[i] != '<')
+            {
+                i++;
+            }
+
+            var precededByFiller = start > 0 && chars[start - 1] == '<';
+            var isFillerWord = i - start >= 2 &&
+                               chars.AsSpan(start, i - start).ToArray().All(c => c is 'L' or 'K');
+
+            if (precededByFiller && isFillerWord)
+            {
+                Array.Fill(chars, '<', start, i - start);
+            }
         }
 
-        return Score(candidate) > Score(current) ? candidate : current;
-
-        static int Score(MrzResult r) =>
-            (r.DocumentNumber.CheckDigitValid == true ? 1 : 0) +
-            (r.DateOfBirth.CheckDigitValid == true ? 1 : 0) +
-            (r.ExpiryDate.CheckDigitValid == true ? 1 : 0) +
-            (r.CompositeCheckValid ? 2 : 0);
+        return new string(chars);
     }
+
+    /// <summary>Keeps whichever result passes more check digits.</summary>
+    public static MrzResult Prefer(MrzResult? current, MrzResult candidate)
+        => current is null || Score(candidate) > Score(current) ? candidate : current;
+
+    /// <summary>Check digits passed: one per field, two for the composite.</summary>
+    public static int Score(MrzResult result) =>
+        (result.DocumentNumber.CheckDigitValid == true ? 1 : 0) +
+        (result.DateOfBirth.CheckDigitValid == true ? 1 : 0) +
+        (result.ExpiryDate.CheckDigitValid == true ? 1 : 0) +
+        (result.CompositeCheckValid ? 2 : 0);
 
     private static bool IsNear(string line, int length)
         => Math.Abs(line.Length - length) <= LengthTolerance;
@@ -263,11 +302,61 @@ public static class MrzParser
             : null;
     }
 
+    /// <summary>
+    /// Within one field, everything after the first filler that consists
+    /// only of fillers and L/K look-alikes is filler (names, optional data and
+    /// personal numbers are padded with '&lt;' to the field's end).
+    /// </summary>
+    private static void RecoverFieldFillers(char[] line, int start, int end)
+    {
+        var firstFiller = Array.IndexOf(line, '<', start, end - start);
+
+        if (firstFiller < 0)
+        {
+            return;
+        }
+
+        // Names keep inner separators: only the tail after the last real
+        // character group is recovered.
+        var tailStart = firstFiller;
+
+        for (var i = firstFiller; i < end; i++)
+        {
+            if (line[i] is not ('<' or 'L' or 'K'))
+            {
+                tailStart = -1;
+                break;
+            }
+        }
+
+        if (tailStart < 0)
+        {
+            // A later filler may start a clean tail (e.g. "ANNA<MARIA<LLLL").
+            for (var i = end - 1; i >= start; i--)
+            {
+                if (line[i] is not ('<' or 'L' or 'K'))
+                {
+                    break;
+                }
+
+                if (line[i] == '<')
+                {
+                    tailStart = i;
+                }
+            }
+        }
+
+        if (tailStart >= 0)
+        {
+            Array.Fill(line, '<', tailStart, end - tailStart);
+        }
+    }
+
     private static readonly Dictionary<char, char> LetterToDigit = new()
     {
         ['O'] = '0', ['Q'] = '0', ['D'] = '0',
         ['I'] = '1', ['L'] = '1',
-        ['Z'] = '2', ['S'] = '5', ['G'] = '6', ['B'] = '8'
+        ['Z'] = '2', ['S'] = '5', ['G'] = '6', ['B'] = '8', ['E'] = '8'
     };
 
     private static readonly Dictionary<char, char> DigitToLetter = new()

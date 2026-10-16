@@ -1,4 +1,4 @@
-﻿using PROMangementSystem.Domain.Common;
+using PROMangementSystem.Domain.Common;
 using PROManagementSystem.Domain.Enums;
 
 namespace PROManagementSystem.Domain.Entities;
@@ -30,7 +30,15 @@ public class DocumentExtraction : BaseEntity
     // text must never be stored here.
     public string SuggestedDetails { get; set; } = "{}";
 
-    public decimal Confidence { get; set; }
+    // Per-field results for the review form: a JSON object keyed like the
+    // suggestions, each { value, source, errors, warnings }. Never "null".
+    public string FieldResults { get; set; } = "{}";
+
+    // Why extraction could not read (part of) the document, for the user;
+    // null when nothing went wrong.
+    public string? FailureCode { get; set; }
+
+    public string? FailureMessage { get; set; }
 
     public string Status { get; set; } = "Pending";
 

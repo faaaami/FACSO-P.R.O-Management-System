@@ -7,7 +7,7 @@ namespace PROManagementSystem.Infrastructure.Extraction;
 /// operations (image Tesseract recognition and scanned-PDF rasterisation +
 /// per-page OCR) for the Local extraction provider. The gate is acquired once
 /// around each complete heavy operation in
-/// <see cref="PROManagementSystem.Infrastructure.AI.LocalDocumentExtractionService"/>
+/// <see cref="DocumentExtractionPipeline"/>
 /// and is intentionally NOT used inside the individual extractor, renderer or
 /// scanned-PDF service, so a single operation can never re-enter the gate and
 /// self-deadlock. <see cref="OcrOptions.MaxConcurrentOcr"/> of 0 (or negative)

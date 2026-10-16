@@ -129,8 +129,6 @@ public class OpenRouterExtractionEndToEndTests
         Assert.Equal(PassportNumber, data.SuggestedDocumentNumber);
         Assert.Equal(IssueDateUtc.Date, data.SuggestedIssueDate!.Value.Date);
         Assert.Equal(ExpiryDateUtc.Date, data.SuggestedExpiryDate!.Value.Date);
-        Assert.Equal("Employee", data.SuggestedOwnerType);
-        Assert.Equal(0.94m, data.Confidence);
 
         var responseDetails = ParseDetails(data.SuggestedDetails);
 
@@ -410,12 +408,15 @@ public class OpenRouterExtractionEndToEndTests
             JsonOptions);
 
         Assert.NotNull(envelope?.Data);
-        Assert.Null(envelope!.Data!.SuggestedType);
+        Assert.Equal("Passport", envelope!.Data!.SuggestedType);
+        Assert.NotNull(envelope.Data.Failure);
 
         var row = GetExtractionRow(envelope.Data.ExtractionId);
 
         Assert.Equal("Pending", row.Status);
-        Assert.Null(row.SuggestedType);
+        Assert.Equal(DocumentType.Passport, row.SuggestedType);
+        Assert.NotNull(row.FailureCode);
+        Assert.Null(row.SuggestedDocumentNumber);
         Assert.True(File.Exists(ResolveStoredFile(row)));
         AssertNoDocument(PassportNumber);
     }
@@ -456,7 +457,9 @@ public class OpenRouterExtractionEndToEndTests
         var row = GetExtractionRow(extractionId);
 
         Assert.Equal("Pending", row.Status);
-        Assert.Null(row.SuggestedType);
+        Assert.Equal(DocumentType.Passport, row.SuggestedType);
+        Assert.NotNull(row.FailureCode);
+        Assert.Null(row.SuggestedDocumentNumber);
         Assert.True(File.Exists(ResolveStoredFile(row)));
         AssertNoDocument(PassportNumber);
 
@@ -522,7 +525,9 @@ public class OpenRouterExtractionEndToEndTests
         var row = GetExtractionRow(envelope!.Data!.ExtractionId);
 
         Assert.Equal("Pending", row.Status);
-        Assert.Null(row.SuggestedType);
+        Assert.Equal(DocumentType.Passport, row.SuggestedType);
+        Assert.NotNull(row.FailureCode);
+        Assert.Null(row.SuggestedDocumentNumber);
         Assert.True(File.Exists(ResolveStoredFile(row)));
         AssertNoDocument(PassportNumber);
     }
@@ -551,8 +556,8 @@ public class OpenRouterExtractionEndToEndTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => service.ExtractAsync(
-                new MemoryStream(PassportPdf()),
-                "application/pdf",
+                string.Join("\n", TestDocumentFixtures.PassportLines()),
+                DocumentType.Passport,
                 cts.Token));
     }
 
@@ -600,8 +605,6 @@ public class OpenRouterExtractionEndToEndTests
         Assert.Equal(PassportNumber, row.SuggestedDocumentNumber);
         Assert.Equal(IssueDateUtc.Date, row.SuggestedIssueDate!.Value.Date);
         Assert.Equal(ExpiryDateUtc.Date, row.SuggestedExpiryDate!.Value.Date);
-        Assert.Equal("Employee", row.SuggestedOwnerType);
-        Assert.Equal(0.94m, row.Confidence);
 
         Assert.NotNull(row.FileUrl);
         Assert.StartsWith("extractions/", row.FileUrl, StringComparison.Ordinal);
@@ -667,7 +670,6 @@ public class OpenRouterExtractionEndToEndTests
 
         Assert.Equal("Passport", data.SuggestedType);
         Assert.Equal(PassportNumber, data.SuggestedDocumentNumber);
-        Assert.Equal(0.94m, data.Confidence);
 
         // D1: the review payload deliberately does not carry the internal
         // storage reference — the dedicated /file endpoint streams the bytes.
@@ -785,6 +787,7 @@ public class OpenRouterExtractionEndToEndTests
 
         var form = new MultipartFormDataContent();
         form.Add(file, "file", fileName);
+        form.Add(new StringContent("Passport"), "documentType");
         request.Content = form;
 
         return await client.SendAsync(request);
@@ -892,7 +895,7 @@ public class OpenRouterExtractionEndToEndTests
 
         public string? SuggestedOwnerType { get; set; }
 
-        public decimal Confidence { get; set; }
+        public FailureView? Failure { get; set; }
 
         public JsonElement SuggestedDetails { get; set; }
 
@@ -936,5 +939,12 @@ public class OpenRouterExtractionEndToEndTests
                     builder.PrimaryHandler = _handler;
                 }
             };
+    }
+
+    private sealed class FailureView
+    {
+        public string Code { get; set; } = string.Empty;
+
+        public string Message { get; set; } = string.Empty;
     }
 }

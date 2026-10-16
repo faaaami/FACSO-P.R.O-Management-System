@@ -28,7 +28,8 @@ public sealed record PendingDocumentExtractionListItemDto(
     DateTime? SuggestedIssueDate,
     DateTime? SuggestedExpiryDate,
     string? SuggestedOwnerType,
-    decimal Confidence,
+    // Set when the document could not be (fully) read; null otherwise.
+    string? FailureCode,
     string Status,
     DateTime? ExpiresAt,
     DateTime CreatedAt,

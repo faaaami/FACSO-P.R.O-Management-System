@@ -100,7 +100,7 @@ public class ExtractionProviderConfigurationTests : IntegrationTestBase
     public void LocalCasing_ResolvesLocalExtractor(string provider)
     {
         Assert.Equal(
-            typeof(LocalDocumentExtractionService),
+            typeof(DocumentExtractionPipeline),
             ResolveExtractorType(provider));
     }
 
@@ -196,6 +196,7 @@ public class ExtractionProviderConfigurationTests : IntegrationTestBase
 
         using var form = new MultipartFormDataContent();
         form.Add(file, "file", "upload.pdf");
+        form.Add(new StringContent("Passport"), "documentType");
 
         var request = new HttpRequestMessage(
             HttpMethod.Post,
@@ -219,7 +220,9 @@ public class ExtractionProviderConfigurationTests : IntegrationTestBase
         Assert.True(envelope!.Success);
         Assert.Equal("Passport", envelope.Data!.SuggestedType);
         Assert.Equal("AI-PASS-123456", envelope.Data.SuggestedDocumentNumber);
-        Assert.Equal(0.96m, envelope.Data.Confidence);
+        Assert.Equal("Ocr", envelope.Data.Fields["documentNumber"].Source);
+        Assert.Equal("2031-01-01", envelope.Data.Fields["expiryDate"].Value);
+        Assert.Null(envelope.Data.Failure);
 
         var extractionId = envelope.Data.ExtractionId;
 
@@ -238,9 +241,12 @@ public class ExtractionProviderConfigurationTests : IntegrationTestBase
         Assert.True(row.ExpiresAt > DateTime.UtcNow.AddHours(23));
         Assert.StartsWith("extractions/", row.FileUrl);
 
-        // Task 7B.5: the Mock provider produces no field suggestions and the
-        // canonical empty object is persisted.
-        Assert.Equal("{}", row.SuggestedDetails);
+        // The Mock's dates are Passport schema fields, so they are stored in
+        // the details too (jsonb normalises the spacing, hence the parse).
+        var details = System.Text.Json.JsonDocument.Parse(row.SuggestedDetails).RootElement;
+        Assert.Equal("2026-01-01", details.GetProperty("issueDate").GetString());
+        Assert.Equal("2031-01-01", details.GetProperty("expiryDate").GetString());
+        Assert.Contains("\"source\"", row.FieldResults);
     }
 
     // ------------------------------------------------------------------
@@ -283,6 +289,15 @@ public class ExtractionProviderConfigurationTests : IntegrationTestBase
 
         public string? SuggestedDocumentNumber { get; set; }
 
-        public decimal Confidence { get; set; }
+        public Dictionary<string, FieldView> Fields { get; set; } = new();
+
+        public object? Failure { get; set; }
+    }
+
+    private sealed class FieldView
+    {
+        public string? Value { get; set; }
+
+        public string Source { get; set; } = string.Empty;
     }
 }

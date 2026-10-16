@@ -79,6 +79,7 @@ public class FileSignatureUploadIntegrationTests : IntegrationTestBase
 
         using var form = new MultipartFormDataContent();
         form.Add(file, "file", fileName);
+        form.Add(new StringContent("Passport"), "documentType");
         request.Content = form;
 
         return await AuthClient.SendAsync(request);

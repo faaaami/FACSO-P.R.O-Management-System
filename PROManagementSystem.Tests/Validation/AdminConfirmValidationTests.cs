@@ -47,7 +47,6 @@ public class AdminConfirmValidationTests : IntegrationTestBase
                     SuggestedIssueDate = null,
                     SuggestedExpiryDate = null,
                     SuggestedOwnerType = "Employee",
-                    Confidence = 0.95m,
                     Status = "Pending",
                     ExpiresAt = now.AddHours(24),
                     CreatedBy = null,

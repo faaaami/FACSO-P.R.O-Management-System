@@ -781,7 +781,7 @@ public class OpenRouterResponseParserTests
     // Helpers
     // ------------------------------------------------------------------
 
-    private static void AssertNeutral(DocumentExtractionResult result)
+    private static void AssertNeutral(AiParsedExtraction result)
     {
         Assert.Null(result.Type);
         Assert.Null(result.DocumentNumber);
@@ -800,10 +800,10 @@ public class OpenRouterResponseParserTests
     private static OpenRouterRawResponse Raw(string json)
         => new(HttpStatusCode.OK, true, json);
 
-    private static DocumentExtractionResult ParseRaw(string json)
+    private static AiParsedExtraction ParseRaw(string json)
         => Parser.Parse(Raw(json), null, 0m);
 
-    private static DocumentExtractionResult ParseLogical(
+    private static AiParsedExtraction ParseLogical(
         string logicalJson,
         decimal classificationConfidence = 0m)
         => Parser.Parse(
@@ -817,7 +817,7 @@ public class OpenRouterResponseParserTests
     /// proves the Number/Boolean conversion branches without touching the real
     /// registry.
     /// </summary>
-    private static DocumentExtractionResult ParseWithStubSchema(
+    private static AiParsedExtraction ParseWithStubSchema(
         string logicalJson)
     {
         IDocumentTypeSchemaProvider schemas = new StubPrimitiveSchemaProvider();

@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PROManagementSystem.Domain.Entities;
 
@@ -42,8 +42,19 @@ public sealed class DocumentExtractionConfiguration
             .IsRequired()
             .HasDefaultValueSql("'{}'::jsonb");
 
-        builder.Property(x => x.Confidence)
-            .HasPrecision(5, 4);
+        builder.Property(x => x.FieldResults)
+            .HasColumnName("field_results")
+            .HasColumnType("jsonb")
+            .IsRequired()
+            .HasDefaultValueSql("'{}'::jsonb");
+
+        builder.Property(x => x.FailureCode)
+            .HasColumnName("failure_code")
+            .HasMaxLength(64);
+
+        builder.Property(x => x.FailureMessage)
+            .HasColumnName("failure_message")
+            .HasMaxLength(500);
 
         builder.Property(x => x.Status)
             .IsRequired()

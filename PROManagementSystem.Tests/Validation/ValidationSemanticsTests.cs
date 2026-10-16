@@ -120,6 +120,7 @@ public class ValidationSemanticsTests : IntegrationTestBase
 
         using var form = new MultipartFormDataContent();
         form.Add(file, "file", "document.pdf");
+        form.Add(new StringContent("Passport"), "documentType");
         request.Content = form;
 
         return await AuthClient.SendAsync(request);

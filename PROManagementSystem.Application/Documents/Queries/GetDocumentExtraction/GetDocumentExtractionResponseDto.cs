@@ -1,3 +1,4 @@
+using PROManagementSystem.Application.Documents.Common;
 using PROManagementSystem.Domain.Enums;
 
 namespace PROManagementSystem.Application.Documents.Queries.GetDocumentExtraction;
@@ -17,8 +18,9 @@ public sealed record GetDocumentExtractionResponseDto(
     DateTime? SuggestedIssueDate,
     DateTime? SuggestedExpiryDate,
     string? SuggestedOwnerType,
-    decimal Confidence,
     string Status,
     DateTime? ExpiresAt,
-    object SuggestedDetails
+    object SuggestedDetails,
+    IReadOnlyDictionary<string, ExtractedFieldDto> Fields,
+    ExtractionFailureDto? Failure
 );

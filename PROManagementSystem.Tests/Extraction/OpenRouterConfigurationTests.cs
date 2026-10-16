@@ -208,7 +208,7 @@ public class OpenRouterProviderConfigurationTests : IntegrationTestBase
     public void OpenRouterKeys_DoNotAffectLocalResolution()
     {
         Assert.Equal(
-            typeof(LocalDocumentExtractionService),
+            typeof(DocumentExtractionPipeline),
             ResolveExtractorType("Local"));
     }
 

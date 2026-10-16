@@ -40,9 +40,6 @@ public static class OpenRouterExtractionServiceExtensions
     {
         services.AddSingleton<OpenRouterPromptBuilder>();
         services.AddScoped<
-            IDocumentTextRecoveryService,
-            DocumentTextRecoveryService>();
-        services.AddScoped<
             IOpenRouterResponseParser,
             OpenRouterResponseParser>();
 
@@ -133,8 +130,6 @@ public static class OpenRouterExtractionServiceExtensions
                     httpClient,
                     serviceProvider.GetRequiredService<IOptions<OpenRouterOptions>>(),
                     serviceProvider.GetRequiredService<OpenRouterPromptBuilder>(),
-                    serviceProvider.GetRequiredService<IDocumentClassifier>(),
-                    serviceProvider.GetRequiredService<IDocumentTextRecoveryService>(),
                     serviceProvider.GetRequiredService<IOpenRouterResponseParser>(),
                     serviceProvider.GetRequiredService<ILogger<OpenRouterDocumentExtractionService>>());
             });

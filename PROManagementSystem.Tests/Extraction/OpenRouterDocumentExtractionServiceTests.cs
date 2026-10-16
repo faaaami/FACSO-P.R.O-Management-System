@@ -5,7 +5,6 @@ using Microsoft.Extensions.Options;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.Common.Validation;
 using PROManagementSystem.Domain.Enums;
-using PROManagementSystem.Infrastructure.AI.DocumentClassification;
 using PROManagementSystem.Infrastructure.AI.DocumentClassification.RuleBasedSchemas;
 using PROManagementSystem.Infrastructure.AI.DocumentExtractionService;
 using Xunit;
@@ -13,7 +12,7 @@ using Xunit;
 namespace PROManagementSystem.Tests.Extraction;
 
 /// <summary>
-/// Task 7C.3.1: the OpenRouter extraction provider HTTP foundation. These are
+/// The OpenRouter AI step (used only when Extraction:Ai:Enabled). These are
 /// pure unit tests — a fake <see cref="RecordingHttpMessageHandler"/> stands in
 /// for the network, document text is synthetic (TestDocumentFixtures), and a
 /// clearly fake API key is used. They prove the request contract, the
@@ -244,7 +243,7 @@ public class OpenRouterDocumentExtractionServiceTests
             SuccessBody);
         var service = CreateService(handler);
 
-        var raw = await service.SendRawAsync(
+        var raw = await service.Service.SendRawAsync(
             ExpectedPrompt,
             CancellationToken.None);
 
@@ -269,8 +268,6 @@ public class OpenRouterDocumentExtractionServiceTests
 
         Assert.Equal(DocumentType.Passport, result.Type);
         Assert.Equal("P-90321", result.DocumentNumber);
-        Assert.Equal("Employee", result.OwnerType);
-        Assert.Equal(0.94m, result.Confidence);
         Assert.Equal("P-90321", result.Details!["passportNumber"]);
         Assert.Equal("TESTLAND", result.Details!["nationality"]);
     }
@@ -312,7 +309,6 @@ public class OpenRouterDocumentExtractionServiceTests
             CancellationToken.None);
 
         Assert.Null(result.Type);
-        Assert.Equal(0m, result.Confidence);
         Assert.Null(result.Details);
     }
 
@@ -332,7 +328,6 @@ public class OpenRouterDocumentExtractionServiceTests
 
         Assert.Null(result.Type);
         Assert.Null(result.DocumentNumber);
-        Assert.Equal(0m, result.Confidence);
     }
 
     // ------------------------------------------------------------------
@@ -354,7 +349,6 @@ public class OpenRouterDocumentExtractionServiceTests
             CancellationToken.None);
 
         Assert.Null(result.Type);
-        Assert.Equal(0m, result.Confidence);
     }
 
     [Fact(DisplayName =
@@ -372,7 +366,6 @@ public class OpenRouterDocumentExtractionServiceTests
             CancellationToken.None);
 
         Assert.Null(result.Type);
-        Assert.Equal(0m, result.Confidence);
     }
 
     [Fact(DisplayName =
@@ -390,7 +383,6 @@ public class OpenRouterDocumentExtractionServiceTests
             CancellationToken.None);
 
         Assert.Null(result.Type);
-        Assert.Equal(0m, result.Confidence);
         Assert.Equal(1, handler.RequestCount);
     }
 
@@ -409,7 +401,6 @@ public class OpenRouterDocumentExtractionServiceTests
             CancellationToken.None);
 
         Assert.Null(result.Type);
-        Assert.Equal(0m, result.Confidence);
     }
 
     [Fact(DisplayName =
@@ -427,7 +418,6 @@ public class OpenRouterDocumentExtractionServiceTests
             CancellationToken.None);
 
         Assert.Null(result.Type);
-        Assert.Equal(0m, result.Confidence);
     }
 
     [Fact(DisplayName =
@@ -498,7 +488,6 @@ public class OpenRouterDocumentExtractionServiceTests
         stopwatch.Stop();
 
         Assert.Null(result.Type);
-        Assert.Equal(0m, result.Confidence);
         Assert.True(
             stopwatch.Elapsed < TimeSpan.FromSeconds(10),
             "The configured timeout should end the call promptly.");
@@ -652,7 +641,6 @@ public class OpenRouterDocumentExtractionServiceTests
             CancellationToken.None);
 
         Assert.Null(result.Type);
-        Assert.Equal(0m, result.Confidence);
 
         // HttpClient enforces the bound while buffering the body (after the
         // resilience pipeline returns), so this is a single transport failure
@@ -670,19 +658,14 @@ public class OpenRouterDocumentExtractionServiceTests
     public async Task UnexpectedException_Propagates()
     {
         var handler = new RecordingHttpMessageHandler(
-            HttpStatusCode.OK,
-            SuccessBody);
-        var service = CreateService(
-            handler,
-            recoveryException: new InvalidOperationException("boom"));
+            (_, _) => throw new InvalidOperationException("boom"));
+        var service = CreateService(handler);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.ExtractAsync(
                 new MemoryStream(),
                 "application/pdf",
                 CancellationToken.None));
-
-        Assert.Equal(0, handler.RequestCount);
     }
 
     // ------------------------------------------------------------------
@@ -856,7 +839,7 @@ public class OpenRouterDocumentExtractionServiceTests
             MaxRetries = 0,
         };
 
-    private static OpenRouterDocumentExtractionService CreateService(
+    private static Harness CreateService(
         RecordingHttpMessageHandler handler,
         OpenRouterOptions? options = null,
         string? recoveryText = null,
@@ -888,37 +871,77 @@ public class OpenRouterDocumentExtractionServiceTests
 
         var schemas = new DocumentTypeSchemaProvider();
 
-        return new OpenRouterDocumentExtractionService(
+        var service = new OpenRouterDocumentExtractionService(
             httpClient,
             Options.Create(options),
             new OpenRouterPromptBuilder(schemas),
-            new RuleBasedDocumentClassifier(),
-            new StubTextRecovery(
-                recoveryText ?? SampleText,
-                recoveryException),
             new OpenRouterResponseParser(
                 schemas,
                 new DocumentDetailsValidator(schemas)),
             logger ?? new CapturingLogger<OpenRouterDocumentExtractionService>());
+
+        return new Harness(service, recoveryText ?? SampleText, recoveryException);
     }
 
-    private sealed class StubTextRecovery : IDocumentTextRecoveryService
+    /// <summary>
+    /// Calls the AI step with the text the pipeline would have recognised,
+    /// for a Passport, and exposes the result in the shape these tests assert.
+    /// </summary>
+    private sealed class Harness
     {
-        private readonly string? _text;
-        private readonly Exception? _exception;
+        private readonly OpenRouterDocumentExtractionService _service;
+        private readonly string _text;
+        private readonly Exception? _recoveryException;
 
-        public StubTextRecovery(string? text, Exception? exception = null)
+        public OpenRouterDocumentExtractionService Service => _service;
+
+        public Harness(OpenRouterDocumentExtractionService service, string text, Exception? recoveryException)
         {
+            _service = service;
             _text = text;
-            _exception = exception;
+            _recoveryException = recoveryException;
         }
 
-        public Task<string?> RecoverAsync(
-            Stream document,
-            string contentType,
-            CancellationToken cancellationToken)
-            => _exception is not null
-                ? Task.FromException<string?>(_exception)
-                : Task.FromResult(_text);
+        public async Task<View> ExtractAsync(Stream document, string contentType, CancellationToken cancellationToken)
+        {
+            if (_recoveryException is not null)
+            {
+                throw _recoveryException;
+            }
+
+            return new View(await _service.ExtractAsync(_text, DocumentType.Passport, cancellationToken));
+        }
+    }
+
+    /// <summary>
+    /// Type is Passport when the step returned any value and null when the
+    /// service was unavailable or the reply was unusable.
+    /// </summary>
+    private sealed class View
+    {
+        private static readonly string[] TopLevel = { "documentNumber", "issueDate", "expiryDate" };
+
+        public View(PROManagementSystem.Infrastructure.Extraction.AiFieldExtraction result)
+        {
+            Result = result;
+        }
+
+        public PROManagementSystem.Infrastructure.Extraction.AiFieldExtraction Result { get; }
+
+        public DocumentType? Type => Result.Available && Result.Values.Count > 0 ? DocumentType.Passport : null;
+
+        public string? DocumentNumber => Result.Values.TryGetValue("documentNumber", out var value) ? value : null;
+
+        public IReadOnlyDictionary<string, string>? Details
+        {
+            get
+            {
+                var details = Result.Values
+                    .Where(pair => !TopLevel.Contains(pair.Key))
+                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+
+                return details.Count == 0 ? null : details;
+            }
+        }
     }
 }

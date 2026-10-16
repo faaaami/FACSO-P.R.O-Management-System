@@ -1,3 +1,4 @@
+using PROManagementSystem.Domain.Enums;
 using PROManagementSystem.Application.Common.FileValidation;
 ﻿using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -568,8 +569,9 @@ public sealed class DocumentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ExtractDocument(
-    IFormFile file,
-    CancellationToken cancellationToken)
+        IFormFile file,
+        [FromForm] string? documentType,
+        CancellationToken cancellationToken)
     {
         if (file is null || file.Length == 0)
         {
@@ -579,6 +581,16 @@ public sealed class DocumentsController : ControllerBase
                     "A document file is required."));
         }
 
+        if (!Enum.TryParse<DocumentType>(documentType, ignoreCase: true, out var selectedType) ||
+            !Enum.IsDefined(selectedType) ||
+            int.TryParse(documentType, out _))
+        {
+            return BadRequest(
+                ApiResponse<object>.FailureResponse(
+                    "DOCUMENT_TYPE_REQUIRED",
+                    "Choose the document type before uploading."));
+        }
+
         await using var stream =
             file.OpenReadStream();
 
@@ -586,7 +598,8 @@ public sealed class DocumentsController : ControllerBase
             stream,
             file.FileName,
             FileUploadPolicy.NormalizeContentType(file.ContentType, file.FileName),
-            file.Length);
+            file.Length,
+            selectedType);
 
         var result =
             await _sender.Send(

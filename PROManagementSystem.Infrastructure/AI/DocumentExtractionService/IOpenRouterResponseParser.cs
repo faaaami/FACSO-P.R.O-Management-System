@@ -13,7 +13,7 @@ namespace PROManagementSystem.Infrastructure.AI.DocumentExtractionService;
 /// </summary>
 internal interface IOpenRouterResponseParser
 {
-    DocumentExtractionResult Parse(
+    AiParsedExtraction Parse(
         OpenRouterRawResponse raw,
         DocumentType? detectedType,
         decimal classificationConfidence);

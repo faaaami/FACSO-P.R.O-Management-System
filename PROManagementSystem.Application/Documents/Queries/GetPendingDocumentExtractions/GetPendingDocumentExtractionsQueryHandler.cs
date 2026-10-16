@@ -46,7 +46,7 @@ public sealed class GetPendingDocumentExtractionsQueryHandler
                 x.SuggestedIssueDate,
                 x.SuggestedExpiryDate,
                 x.SuggestedOwnerType,
-                x.Confidence,
+                x.FailureCode,
                 x.Status,
                 x.ExpiresAt,
                 x.CreatedAt,

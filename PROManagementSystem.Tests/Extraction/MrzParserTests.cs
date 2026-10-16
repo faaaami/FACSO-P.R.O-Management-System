@@ -118,6 +118,50 @@ public sealed class MrzParserTests
         Assert.True(mrz.CompositeCheckValid);
     }
 
+    [Fact(DisplayName = "Filler runs OCR'd as LLLL are recovered (real Tesseract output)")]
+    public void FillerRunsReadAsL_AreRecovered()
+    {
+        // Exact Tesseract output for a rendered TD3 specimen: the trailing
+        // fillers came back as L, making line 1 one character too long.
+        const string ocr =
+            "P<UTOERIKSSON<<ANNA<MARIA<LLLLLLLLLLLLLLLLLLL\n" +
+            "L898902C36UT07408122F1204159ZE184226B<<<<<10";
+
+        var mrz = MrzParser.FindAndParse(ocr, MrzFormat.Td3);
+
+        Assert.NotNull(mrz);
+        Assert.Equal("ANNA MARIA", mrz!.GivenNames);
+        Assert.Equal("UTO", mrz.Nationality);
+        Assert.True(mrz.AllChecksValid);
+    }
+
+    [Fact(DisplayName = "TD1 fillers read as L and a check digit read as E are recovered")]
+    public void Td1OcrNoise_IsRecovered()
+    {
+        // Exact Tesseract output for the synthetic Emirates ID back side.
+        const string ocr =
+            "ILARE1234567897784199012345676\n" +
+            "9001158M3102204PAK<<<LLLLLLLLE\n" +
+            "KHAN<<MOHAMMED<ALI<LLLLLLLLLLL";
+
+        var mrz = MrzParser.FindAndParse(ocr, MrzFormat.Td1);
+
+        Assert.NotNull(mrz);
+        Assert.Equal("MOHAMMED ALI", mrz!.GivenNames);
+        Assert.Equal("784199012345676", mrz.OptionalData1);
+        Assert.True(mrz.AllChecksValid);
+    }
+
+    [Theory(DisplayName = "Names containing L or K are left alone")]
+    [InlineData("P<UTOMILLER<<KELLY<<<<<<<<<<<<<<<<<<<<<<<<<<", "MILLER", "KELLY")]
+    [InlineData("P<UTOKOK<<LLOYD<<<<<<<<<<<<<<<<<<<<<<<<<<<<<", "KOK", "LLOYD")]
+    public void NamesWithLAndK_AreKept(string line1, string surname, string given)
+    {
+        Assert.True(MrzParser.TryParseTd3(line1, Td3Line2, out var mrz));
+        Assert.Equal(surname, mrz.Surname);
+        Assert.Equal(given, mrz.GivenNames);
+    }
+
     [Fact(DisplayName = "Filler characters OCR'd as « and spaces are normalised")]
     public void FillerVariants_AreNormalised()
     {
