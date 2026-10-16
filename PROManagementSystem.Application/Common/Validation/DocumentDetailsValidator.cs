@@ -95,6 +95,14 @@ public sealed class DocumentDetailsValidator
                                 $"{field.Label} must be at most " +
                                 $"{field.MaxLength.Value} characters."));
                     }
+                    else if (field.Format == DocumentFieldFormat.EmiratesIdNumber &&
+                             !EmiratesIdNumber.IsValidFormat(value.GetString()))
+                    {
+                        failures.Add(
+                            new ValidationFailure(
+                                $"Details.{field.Key}",
+                                EmiratesIdNumber.FormatMessage));
+                    }
 
                     break;
 

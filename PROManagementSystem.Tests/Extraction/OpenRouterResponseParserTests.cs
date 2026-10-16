@@ -88,7 +88,7 @@ public class OpenRouterResponseParserTests
             {
               "documentType": "EmiratesId",
               "details": {
-                "idNumber": "ID-2026-0001",
+                "idNumber": "784-1990-1234567-6",
                 "cardNumber": "CARD-1",
                 "nationality": "Testland"
               }
@@ -96,7 +96,7 @@ public class OpenRouterResponseParserTests
             """);
 
         Assert.Equal(DocumentType.EmiratesId, result.Type);
-        Assert.Equal("ID-2026-0001", result.Details!["idNumber"]);
+        Assert.Equal("784-1990-1234567-6", result.Details!["idNumber"]);
         Assert.Equal("CARD-1", result.Details!["cardNumber"]);
         Assert.Equal("Testland", result.Details!["nationality"]);
     }

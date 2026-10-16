@@ -1,4 +1,5 @@
 using FluentValidation;
+using PROManagementSystem.Domain.Enums;
 using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Validation;
 
@@ -20,6 +21,13 @@ public sealed class ConfirmDocumentCommandValidator
             .Must(x => !string.IsNullOrWhiteSpace(x))
             .WithMessage(
                 "Document number is required and must be at most 100 characters.");
+
+        // For an Emirates ID the document number is the 784 ID number.
+        RuleFor(x => x.DocumentNumber)
+            .Must(EmiratesIdNumber.IsValidFormat)
+            .When(x => x.Type == DocumentType.EmiratesId &&
+                       !string.IsNullOrWhiteSpace(x.DocumentNumber))
+            .WithMessage(EmiratesIdNumber.FormatMessage);
 
         RuleFor(x => x)
             .Must(x =>

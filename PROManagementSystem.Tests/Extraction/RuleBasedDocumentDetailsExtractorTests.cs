@@ -81,7 +81,7 @@ public class RuleBasedDocumentDetailsExtractorTests
     [Theory(DisplayName =
         "Each document type maps its primary identifier label to its schema key")]
     [InlineData(DocumentType.Visa, "VISA NUMBER: V-90321", "visaNumber", "V-90321")]
-    [InlineData(DocumentType.EmiratesId, "ID NUMBER: ID-2026-0001", "idNumber", "ID-2026-0001")]
+    [InlineData(DocumentType.EmiratesId, "ID NUMBER: 784-1990-1234567-6", "idNumber", "784-1990-1234567-6")]
     [InlineData(DocumentType.LaborCard, "LABOR CARD NUMBER: LC-2026-0001", "laborCardNumber", "LC-2026-0001")]
     [InlineData(DocumentType.TradeLicense, "LICENSE NUMBER: TL-2026-0001", "licenseNumber", "TL-2026-0001")]
     [InlineData(DocumentType.EstablishmentCard, "ESTABLISHMENT NUMBER: EC-2026-0001", "establishmentNumber", "EC-2026-0001")]
@@ -108,12 +108,12 @@ public class RuleBasedDocumentDetailsExtractorTests
             "LICENCE NUMBER: TL-2026-0001",
             DocumentType.TradeLicense);
         var identityCard = await Extract(
-            "IDENTITY CARD NUMBER: ID-2026-0001",
+            "IDENTITY CARD NUMBER: 784-1990-1234567-6",
             DocumentType.EmiratesId);
 
         Assert.Equal("LC-2026-0001", labour!["laborCardNumber"]);
         Assert.Equal("TL-2026-0001", licence!["licenseNumber"]);
-        Assert.Equal("ID-2026-0001", identityCard!["idNumber"]);
+        Assert.Equal("784-1990-1234567-6", identityCard!["idNumber"]);
     }
 
     [Fact(DisplayName =

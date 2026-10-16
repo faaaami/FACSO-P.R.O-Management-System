@@ -1,4 +1,6 @@
-﻿using MediatR;
+using PROManagementSystem.Domain.Enums;
+using PROManagementSystem.Application.Common.Validation;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Interfaces;
@@ -162,6 +164,13 @@ public sealed class ConfirmDocumentCommandHandler
                     "Expiry date must be greater than or equal to issue date.");
             }
 
+            // Emirates ID numbers are stored in one canonical form
+            // (784-YYYY-NNNNNNN-N) so duplicates are detected however typed.
+            var documentNumber = request.Type == DocumentType.EmiratesId
+                ? EmiratesIdNumber.Normalize(request.DocumentNumber)
+                  ?? request.DocumentNumber.Trim()
+                : request.DocumentNumber.Trim();
+
             // 6. Reject when the same owner already holds an active document
             //    with this type and document number.
             await DocumentDuplicateGuard.EnsureNotDuplicateAsync(
@@ -169,7 +178,7 @@ public sealed class ConfirmDocumentCommandHandler
                 request.EmployeeId,
                 request.ClientEntityId,
                 request.Type,
-                request.DocumentNumber,
+                documentNumber,
                 cancellationToken);
 
             // 7. Create the real document.
@@ -192,7 +201,7 @@ public sealed class ConfirmDocumentCommandHandler
                     request.Type,
 
                 DocumentNumber =
-                    request.DocumentNumber.Trim(),
+                    documentNumber,
 
                 IssueDate =
                     request.IssueDate,

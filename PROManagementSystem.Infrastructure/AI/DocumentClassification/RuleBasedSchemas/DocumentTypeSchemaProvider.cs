@@ -38,6 +38,16 @@ public sealed class DocumentTypeSchemaProvider
                     DocumentFieldValueKind.String,
                     Required: true,
                     MaxLength: 50),
+                new DocumentFieldDefinition(
+                    "surname",
+                    "Surname",
+                    DocumentFieldValueKind.String,
+                    MaxLength: 100),
+                new DocumentFieldDefinition(
+                    "givenNames",
+                    "Given Names",
+                    DocumentFieldValueKind.String,
+                    MaxLength: 150),
 
                 new DocumentFieldDefinition(
                     "nationality",
@@ -130,7 +140,23 @@ public sealed class DocumentTypeSchemaProvider
                     "ID Number",
                     DocumentFieldValueKind.String,
                     Required: true,
-                    MaxLength: 50),
+                    MaxLength: 50,
+                    Format: DocumentFieldFormat.EmiratesIdNumber),
+                new DocumentFieldDefinition(
+                    "surname",
+                    "Surname",
+                    DocumentFieldValueKind.String,
+                    MaxLength: 100),
+                new DocumentFieldDefinition(
+                    "givenNames",
+                    "Given Names",
+                    DocumentFieldValueKind.String,
+                    MaxLength: 150),
+                new DocumentFieldDefinition(
+                    "sex",
+                    "Sex",
+                    DocumentFieldValueKind.String,
+                    MaxLength: 20),
 
                 new DocumentFieldDefinition(
                     "cardNumber",

@@ -24,4 +24,17 @@ public sealed record DocumentFieldDefinition(
     string Label,
     DocumentFieldValueKind ValueKind,
     bool Required = false,
-    int? MaxLength = null);
+    int? MaxLength = null,
+    DocumentFieldFormat Format = DocumentFieldFormat.None);
+
+/// <summary>
+/// An additional format rule for a String field, enforced by
+/// <see cref="Validation.DocumentDetailsValidator"/> wherever details are saved.
+/// </summary>
+public enum DocumentFieldFormat
+{
+    None = 0,
+
+    /// <summary>784-YYYY-NNNNNNN-N (see <see cref="Validation.EmiratesIdNumber"/>).</summary>
+    EmiratesIdNumber = 1
+}

@@ -37,8 +37,8 @@ internal static class TestDocumentFixtures
     {
         "EMIRATES ID",
         "EMIRATES IDENTITY CARD",
-        "ID NUMBER: ID-2026-0001",
-        "IDENTITY CARD NUMBER: ID-2026-0001",
+        "ID NUMBER: 784-1990-1234567-6",
+        "IDENTITY CARD NUMBER: 784-1990-1234567-6",
         "NATIONALITY: TESTLAND",
         "DATE OF BIRTH: 1990-01-01",
     };
