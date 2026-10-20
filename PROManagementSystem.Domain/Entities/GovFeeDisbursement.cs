@@ -13,6 +13,10 @@ public sealed class GovFeeDisbursement : BaseEntity
 
     public RenewalTask? RenewalTask { get; set; }
 
+    public Guid? ServiceJobId { get; set; }
+
+    public ServiceJob? ServiceJob { get; set; }
+
     public string FeeDescription { get; set; } = string.Empty;
 
     public string? GovernmentReference { get; set; }

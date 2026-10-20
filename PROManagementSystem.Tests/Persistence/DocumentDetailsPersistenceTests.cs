@@ -40,7 +40,7 @@ public class DocumentDetailsPersistenceTests : IntegrationTestBase
         Assert.Equal("jsonb", mappedType);
 
         await using (var connection = new NpgsqlConnection(
-            Fixture.Container.GetConnectionString()))
+            Fixture.ConnectionString))
         {
             await connection.OpenAsync();
 
@@ -308,7 +308,7 @@ public class DocumentDetailsPersistenceTests : IntegrationTestBase
             || n.Contains("RawText", StringComparison.OrdinalIgnoreCase));
 
         await using var connection = new NpgsqlConnection(
-            Fixture.Container.GetConnectionString());
+            Fixture.ConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """

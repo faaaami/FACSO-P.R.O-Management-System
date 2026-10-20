@@ -184,8 +184,18 @@ public sealed class CreateServiceRequestCommandHandler
 
         var now = DateTime.UtcNow;
 
+        if (request.ServiceDefinitionId.HasValue &&
+            !await _context.ServiceDefinitions.AnyAsync(
+                x => x.Id == request.ServiceDefinitionId.Value && x.IsActive,
+                cancellationToken))
+        {
+            throw new KeyNotFoundException(
+                "Service was not found.");
+        }
+
         var serviceRequest = new ServiceRequest
         {
+            ServiceDefinitionId = request.ServiceDefinitionId,
             Id = Guid.NewGuid(),
             ClientCompanyId = clientCompanyId.Value,
             Type = request.Type,

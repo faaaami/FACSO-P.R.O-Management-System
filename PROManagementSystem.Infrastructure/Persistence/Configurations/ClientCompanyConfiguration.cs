@@ -47,6 +47,33 @@ public sealed class ClientCompanyConfiguration
             .HasColumnName("is_active")
             .IsRequired();
 
+        builder.Property(x => x.CustomerType)
+            .HasColumnName("customer_type")
+            .HasDefaultValue(PROManagementSystem.Domain.Enums.CustomerType.Subscription)
+            .IsRequired();
+
+        builder.Property(x => x.CustomerCode)
+            .HasColumnName("customer_code")
+            .HasMaxLength(20);
+
+        builder.Property(x => x.TaxRegistrationNumber)
+            .HasColumnName("tax_registration_number")
+            .HasMaxLength(15);
+
+        builder.Property(x => x.ContactPersonName)
+            .HasColumnName("contact_person_name")
+            .HasMaxLength(200);
+
+        builder.Property(x => x.Notes)
+            .HasColumnName("notes")
+            .HasMaxLength(2000);
+
+        builder.HasIndex(x => x.CustomerCode)
+            .IsUnique()
+            .HasFilter("customer_code IS NOT NULL");
+
+        builder.HasIndex(x => x.CustomerType);
+
         builder.Property(x => x.IsDeleted)
             .HasColumnName("is_deleted")
             .IsRequired();

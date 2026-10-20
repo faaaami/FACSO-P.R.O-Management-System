@@ -406,7 +406,7 @@ public class FileStorageIntegrationTests : IntegrationTestBase
         try
         {
             using var factory = new TestApplicationFactory(
-                Fixture.Container.GetConnectionString(),
+                Fixture.ConnectionString,
                 storageRoot: invalidRoot);
 
             using var client = factory

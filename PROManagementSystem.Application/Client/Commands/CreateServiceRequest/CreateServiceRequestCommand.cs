@@ -7,5 +7,6 @@ public sealed record CreateServiceRequestCommand(
     ServiceRequestType Type,
     Guid? EmployeeId,
     Guid? EntityId,
-    string? Notes
+    string? Notes,
+    Guid? ServiceDefinitionId = null
 ) : IRequest<CreateServiceRequestResponseDto>;

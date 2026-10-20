@@ -47,7 +47,11 @@ public sealed class ServiceRequestReadRepository
                 {SqlColumnNames.ServiceRequestConvertedAt} AS ConvertedAt,
                 {SqlColumnNames.ServiceRequestRejectedAt} AS RejectedAt,
                 {SqlColumnNames.ServiceRequestConvertedRenewalTaskId} AS ConvertedRenewalTaskId,
-                {SqlColumnNames.ServiceRequestCreatedAt} AS CreatedAt
+                {SqlColumnNames.ServiceRequestCreatedAt} AS CreatedAt,
+                "ServiceDefinitionId" AS ServiceDefinitionId,
+                (SELECT sd."Name" FROM service_definitions sd WHERE sd."Id" = service_requests."ServiceDefinitionId") AS ServiceName,
+                "ConvertedServiceJobId" AS ConvertedServiceJobId,
+                (SELECT sj."JobNumber" FROM service_jobs sj WHERE sj."Id" = service_requests."ConvertedServiceJobId") AS ConvertedJobNumber
             FROM service_requests
             WHERE {SqlColumnNames.ServiceRequestIsDeleted} = false
             ORDER BY {SqlColumnNames.ServiceRequestCreatedAt} DESC
@@ -106,7 +110,11 @@ public sealed class ServiceRequestReadRepository
                 {SqlColumnNames.ServiceRequestRejectedAt} AS RejectedAt,
                 {SqlColumnNames.ServiceRequestConvertedRenewalTaskId} AS ConvertedRenewalTaskId,
                 {SqlColumnNames.ServiceRequestCreatedAt} AS CreatedAt,
-                {SqlColumnNames.ServiceRequestUpdatedAt} AS UpdatedAt
+                {SqlColumnNames.ServiceRequestUpdatedAt} AS UpdatedAt,
+                "ServiceDefinitionId" AS ServiceDefinitionId,
+                (SELECT sd."Name" FROM service_definitions sd WHERE sd."Id" = service_requests."ServiceDefinitionId") AS ServiceName,
+                "ConvertedServiceJobId" AS ConvertedServiceJobId,
+                (SELECT sj."JobNumber" FROM service_jobs sj WHERE sj."Id" = service_requests."ConvertedServiceJobId") AS ConvertedJobNumber
             FROM service_requests
             WHERE {SqlColumnNames.ServiceRequestId} = @Id
               AND {SqlColumnNames.ServiceRequestIsDeleted} = false;
@@ -167,7 +175,11 @@ public sealed class ServiceRequestReadRepository
                 {SqlColumnNames.ServiceRequestConvertedAt} AS ConvertedAt,
                 {SqlColumnNames.ServiceRequestRejectedAt} AS RejectedAt,
                 {SqlColumnNames.ServiceRequestConvertedRenewalTaskId} AS ConvertedRenewalTaskId,
-                {SqlColumnNames.ServiceRequestCreatedAt} AS CreatedAt
+                {SqlColumnNames.ServiceRequestCreatedAt} AS CreatedAt,
+                "ServiceDefinitionId" AS ServiceDefinitionId,
+                (SELECT sd."Name" FROM service_definitions sd WHERE sd."Id" = service_requests."ServiceDefinitionId") AS ServiceName,
+                "ConvertedServiceJobId" AS ConvertedServiceJobId,
+                (SELECT sj."JobNumber" FROM service_jobs sj WHERE sj."Id" = service_requests."ConvertedServiceJobId") AS ConvertedJobNumber
             FROM service_requests
             WHERE {whereClause}
               AND (@Status IS NULL OR {SqlColumnNames.ServiceRequestStatus} = @Status)
@@ -222,7 +234,11 @@ public sealed class ServiceRequestReadRepository
                 {SqlColumnNames.ServiceRequestRejectedAt} AS RejectedAt,
                 {SqlColumnNames.ServiceRequestConvertedRenewalTaskId} AS ConvertedRenewalTaskId,
                 {SqlColumnNames.ServiceRequestCreatedAt} AS CreatedAt,
-                {SqlColumnNames.ServiceRequestUpdatedAt} AS UpdatedAt
+                {SqlColumnNames.ServiceRequestUpdatedAt} AS UpdatedAt,
+                "ServiceDefinitionId" AS ServiceDefinitionId,
+                (SELECT sd."Name" FROM service_definitions sd WHERE sd."Id" = service_requests."ServiceDefinitionId") AS ServiceName,
+                "ConvertedServiceJobId" AS ConvertedServiceJobId,
+                (SELECT sj."JobNumber" FROM service_jobs sj WHERE sj."Id" = service_requests."ConvertedServiceJobId") AS ConvertedJobNumber
             FROM service_requests
             WHERE {SqlColumnNames.ServiceRequestId} = @Id
               AND {SqlColumnNames.ServiceRequestClientCompanyId} = @ClientCompanyId

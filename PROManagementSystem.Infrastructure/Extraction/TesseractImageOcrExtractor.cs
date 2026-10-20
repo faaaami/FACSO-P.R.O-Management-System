@@ -93,7 +93,18 @@ public sealed class TesseractImageOcrExtractor : IImageOcrExtractor
                 _options.Language,
                 EngineMode.LstmOnly);
 
-            using var image = Image.LoadFromMemory(bytes);
+            // Never hand raw upload bytes to Leptonica: on Linux a corrupt or
+            // truncated PNG/JPEG can abort the whole process inside libpng /
+            // libjpeg. Magick.NET decodes defensively (corruption surfaces as
+            // a managed exception) and re-encodes a clean PNG for Leptonica.
+            var safeBytes = NormalizeForLeptonica(bytes, _options.MaximumPixels);
+
+            if (safeBytes is null)
+            {
+                return new OcrTextExtractionResult(string.Empty, false);
+            }
+
+            using var image = Image.LoadFromMemory(safeBytes);
 
             if (_options.MaximumPixels > 0
                 && (long)image.Width * image.Height > _options.MaximumPixels)
@@ -134,6 +145,34 @@ public sealed class TesseractImageOcrExtractor : IImageOcrExtractor
     /// <c>x64</c> folder. The assignment is idempotent so concurrent requests
     /// can share the same static loader configuration.
     /// </summary>
+    /// <summary>
+    /// Decodes the upload with Magick.NET and returns a lossless PNG of it, or
+    /// null when the image is unreadable or larger than the pixel gate. The
+    /// header is inspected first so oversized images are rejected without
+    /// being decoded.
+    /// </summary>
+    internal static byte[]? NormalizeForLeptonica(byte[] bytes, long maximumPixels)
+    {
+        try
+        {
+            var info = new ImageMagick.MagickImageInfo(bytes);
+
+            if (maximumPixels > 0 && (long)info.Width * info.Height > maximumPixels)
+            {
+                return null;
+            }
+
+            using var magick = new ImageMagick.MagickImage(bytes);
+            magick.AutoOrient();
+            magick.Format = ImageMagick.MagickFormat.Png;
+            return magick.ToByteArray();
+        }
+        catch (ImageMagick.MagickException)
+        {
+            return null;
+        }
+    }
+
     private static void ConfigureNativeSearchPath()
     {
         var baseDirectory = AppContext.BaseDirectory;

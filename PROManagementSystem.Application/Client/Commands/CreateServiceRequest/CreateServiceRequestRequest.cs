@@ -6,5 +6,6 @@ public sealed record CreateServiceRequestRequest(
     ServiceRequestType Type,
     Guid? EmployeeId,
     Guid? EntityId,
-    string? Notes
+    string? Notes,
+    Guid? ServiceDefinitionId = null
 );

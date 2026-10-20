@@ -1,4 +1,5 @@
 ﻿using MediatR;
+using PROManagementSystem.Application.Common.Helpers;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Domain.Entities;
 
@@ -60,6 +61,9 @@ public sealed class CreateClientCompanyCommandHandler
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
+
+        clientCompany.CustomerCode =
+            await CustomerCodes.NextAsync(_context, cancellationToken);
 
         _context.ClientCompanies.Add(clientCompany);
 

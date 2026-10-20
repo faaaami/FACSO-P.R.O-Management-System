@@ -1,0 +1,126 @@
+using PROManagementSystem.Domain.Enums;
+
+namespace PROManagementSystem.Application.ServiceJobs;
+
+public sealed record ServiceJobListItemDto(
+    Guid Id,
+    string JobNumber,
+    Guid ClientCompanyId,
+    string ClientName,
+    string? CustomerCode,
+    CustomerType CustomerType,
+    Guid ServiceDefinitionId,
+    string ServiceCode,
+    string ServiceName,
+    ServiceCategory Category,
+    Guid? EmployeeId,
+    string? PersonName,
+    Guid? ClientEntityId,
+    string? EntityName,
+    Guid? AssignedStaffId,
+    string? AssignedStaffName,
+    ServiceJobStatus Status,
+    ServiceJobPriority Priority,
+    ServiceJobSource Source,
+    decimal ServiceFee,
+    string? ApplicationNumber,
+    DateOnly? DueDate,
+    bool IsOverdue,
+    int StepsTotal,
+    int StepsDone,
+    DateTime CreatedAt,
+    DateTime? CompletedAt);
+
+public sealed record ServiceJobStepDto(
+    Guid Id,
+    int Order,
+    string Name,
+    ServiceJobStepStatus Status,
+    string? ReferenceNumber,
+    string? Notes,
+    DateTime? CompletedAt,
+    Guid? CompletedByUserId,
+    string? CompletedByName);
+
+public sealed record ServiceJobDocumentDto(
+    Guid Id,
+    int Order,
+    string Name,
+    bool IsMandatory,
+    bool IsReceived,
+    DateTime? ReceivedAt);
+
+public sealed record ServiceJobActivityDto(
+    Guid Id,
+    string Action,
+    ServiceJobStatus? FromStatus,
+    ServiceJobStatus? ToStatus,
+    string? Note,
+    bool IsInternal,
+    Guid? UserId,
+    string? UserName,
+    DateTime CreatedAt);
+
+public sealed record ServiceJobGovFeeDto(
+    Guid Id,
+    string FeeDescription,
+    string? GovernmentReference,
+    decimal Amount,
+    GovFeeDisbursementStatus Status,
+    DateTime PaidByFirmAt);
+
+public sealed record ServiceJobDto(
+    Guid Id,
+    string JobNumber,
+    Guid ClientCompanyId,
+    string ClientName,
+    string? CustomerCode,
+    CustomerType CustomerType,
+    Guid ServiceDefinitionId,
+    string ServiceCode,
+    string ServiceName,
+    ServiceCategory Category,
+    string? Authority,
+    Guid? EmployeeId,
+    string? PersonName,
+    string? PersonPassportNumber,
+    Guid? ClientEntityId,
+    string? EntityName,
+    Guid? DocumentId,
+    string? DocumentNumber,
+    DocumentType? DocumentType,
+    DateTime? DocumentExpiryDate,
+    DocumentType? RenewsDocumentType,
+    Guid? ServiceRequestId,
+    Guid? AssignedStaffId,
+    string? AssignedStaffName,
+    ServiceJobStatus Status,
+    ServiceJobPriority Priority,
+    ServiceJobSource Source,
+    decimal? ServiceFee,
+    bool ServiceFeeVatable,
+    decimal? EstimatedGovernmentFee,
+    string? ApplicationNumber,
+    DateOnly? DueDate,
+    bool IsOverdue,
+    string? Notes,
+    string? OnHoldReason,
+    DateTime? StartedAt,
+    DateTime? CompletedAt,
+    DateTime? CancelledAt,
+    string? CancelReason,
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    IReadOnlyList<ServiceJobStepDto> Steps,
+    IReadOnlyList<ServiceJobDocumentDto> Documents,
+    IReadOnlyList<ServiceJobActivityDto> Activities,
+    IReadOnlyList<ServiceJobGovFeeDto> GovernmentFees);
+
+public sealed record ServiceJobSummaryDto(
+    int New,
+    int InProgress,
+    int OnHold,
+    int CompletedToday,
+    int Overdue,
+    int Unassigned,
+    int OpenTotal);

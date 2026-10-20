@@ -28,3 +28,10 @@ README.md
 !.git/config
 !.git/packed-refs
 !.git/refs/heads/**
+# Never ship local secrets or personal data in images
+**/appsettings.Local.json
+**/appsettings.*.Local.json
+**/storage
+samples/
+Frontend/
+signalr-test/
