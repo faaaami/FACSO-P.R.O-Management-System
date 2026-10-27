@@ -24,16 +24,13 @@ public sealed class VoidServiceFeeInvoiceCommandHandler
 
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
-    private readonly IRazorpayService _razorpayService;
 
     public VoidServiceFeeInvoiceCommandHandler(
         IApplicationDbContext context,
-        ICurrentUserService currentUser,
-        IRazorpayService razorpayService)
+        ICurrentUserService currentUser)
     {
         _context = context;
         _currentUser = currentUser;
-        _razorpayService = razorpayService;
     }
 
     public async Task<VoidServiceFeeInvoiceResponseDto> Handle(
@@ -59,14 +56,17 @@ public sealed class VoidServiceFeeInvoiceCommandHandler
                     "Service fee invoice was not found.");
             }
 
-            // 2. Find the related PaymentOrder (if one exists). There is at
-            //    most one per invoice because ServiceFeeInvoiceId is unique.
+            // 2. Find the invoice's open PaymentOrder (if one exists). An
+            //    invoice can have many closed orders but at most one open one,
+            //    enforced by a filtered unique index on ServiceFeeInvoiceId.
             var relatedOrder =
                 await _context.PaymentOrders
                     .AsNoTracking()
                     .FirstOrDefaultAsync(
                         x =>
                             x.ServiceFeeInvoiceId == request.Id &&
+                            (x.Status == PaymentStatus.Created ||
+                             x.Status == PaymentStatus.Pending) &&
                             !x.IsDeleted,
                         cancellationToken);
 
@@ -112,24 +112,14 @@ public sealed class VoidServiceFeeInvoiceCommandHandler
 
             var now = DateTime.UtcNow;
 
-            // 6. Retire the related PaymentOrder. A live gateway order over a
-            //    voided invoice is the dangerous state: the client can still
-            //    complete checkout against it, and the webhook would then
-            //    reject the payment because the invoice is Void - the money is
-            //    taken and never recorded. Close the gateway first and roll
-            //    the whole void back if that fails, so a failed close leaves
-            //    both the order and the invoice untouched and retryable.
+            // 6. Retire the related PaymentOrder locally. Razorpay cannot
+            //    close a gateway order, so if the client still completes
+            //    checkout on it, the webhook records the money as
+            //    PaidRequiresReview against the voided invoice and notifies
+            //    admins - it is never lost.
             if (relatedOrder is not null &&
                 ClosableStatuses.Contains(relatedOrder.Status))
             {
-                if (relatedOrder.RazorpayOrderId is not null)
-                {
-                    await _razorpayService
-                        .CloseOrderAsync(
-                            relatedOrder.RazorpayOrderId,
-                            cancellationToken);
-                }
-
                 relatedOrder.Status = PaymentStatus.Cancelled;
                 relatedOrder.CancelledAt = now;
                 relatedOrder.UpdatedAt = now;

@@ -941,6 +941,14 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<decimal?>("CapturedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("CapturedCurrency")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
                     b.Property<Guid>("ClientCompanyId")
                         .HasColumnType("uuid");
 
@@ -986,6 +994,10 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Property<Guid?>("RetainerInvoiceId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ReviewReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<Guid?>("ServiceFeeInvoiceId")
                         .HasColumnType("uuid");
 
@@ -1003,15 +1015,19 @@ namespace PROManagementSystem.Infrastructure.Migrations
 
                     b.HasIndex("RazorpayOrderId");
 
-                    b.HasIndex("RetainerInvoiceId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
+                    b.HasIndex("RetainerInvoiceId");
 
-                    b.HasIndex("ServiceFeeInvoiceId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
+                    b.HasIndex("ServiceFeeInvoiceId");
 
                     b.HasIndex("Status");
+
+                    b.HasIndex(new[] { "RetainerInvoiceId" }, "IX_payment_orders_RetainerInvoiceId_Open")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false AND \"Status\" IN (1, 2)");
+
+                    b.HasIndex(new[] { "ServiceFeeInvoiceId" }, "IX_payment_orders_ServiceFeeInvoiceId_Open")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false AND \"Status\" IN (1, 2)");
 
                     b.ToTable("payment_orders", (string)null);
                 });
@@ -1989,6 +2005,57 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasFilter("\"is_deleted\" = false");
 
                     b.ToTable("users", (string)null);
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.WebhookEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("RazorpayOrderId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RazorpayPaymentId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RazorpayOrderId");
+
+                    b.HasIndex(new[] { "EventId" }, "IX_webhook_events_EventId")
+                        .IsUnique();
+
+                    b.ToTable("webhook_events", (string)null);
                 });
 
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.ClientEntity", b =>

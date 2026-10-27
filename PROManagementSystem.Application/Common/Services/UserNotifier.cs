@@ -23,6 +23,19 @@ public sealed class UserNotifier : IUserNotifier
         _logger = logger;
     }
 
+    public async Task NotifyAdminsAsync(
+        string title,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        var adminIds = await _context.Users
+            .Where(x => x.Role == UserRole.Admin && x.IsActive && !x.IsDeleted)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        await NotifyUsersAsync(adminIds, title, message, cancellationToken);
+    }
+
     public async Task NotifyClientContactsAsync(
         Guid clientCompanyId,
         string title,

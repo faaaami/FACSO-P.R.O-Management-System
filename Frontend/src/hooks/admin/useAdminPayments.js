@@ -6,6 +6,10 @@ import { getAdminPaymentOrders, getAdminPaymentOrderById } from '../../api/admin
  * Backing query GET /api/v1/payment-orders
  * Params: { clientCompanyId?, status?, page = 1, pageSize = 20 }
  *
+ * `status` is forwarded as the enum NAME (e.g. 'PaidRequiresReview'). The
+ * repository now binds it as the integer enum (PaymentStatusFilterTests), so the
+ * historical note below no longer applies to the request this hook sends.
+ *
  * ------------------------------------------------------------------
  * NO `status` IS EVER SENT, and the reason is a backend defect.
  * ------------------------------------------------------------------
@@ -38,16 +42,19 @@ import { getAdminPaymentOrders, getAdminPaymentOrderById } from '../../api/admin
  */
 export function useAdminPaymentOrders(params = {}) {
   const clientCompanyId = params?.clientCompanyId
-  // Read but deliberately NOT forwarded: see the note above on the unusable
-  // repository predicate. It stays in the key so the shape of this hook matches the
-  // other Admin list hooks and so removing the control later is a one-line change.
   const status = params?.status
   const page = params?.page ?? 1
   const pageSize = params?.pageSize ?? 20
 
   const query = useQuery({
     queryKey: ['admin', 'payments', { clientCompanyId, status, page, pageSize }],
-    queryFn: () => getAdminPaymentOrders({ clientCompanyId, page, pageSize }),
+    queryFn: () =>
+      getAdminPaymentOrders({
+        clientCompanyId,
+        ...(status ? { status } : {}),
+        page,
+        pageSize,
+      }),
     staleTime: 30_000,
     retry: 1,
   })

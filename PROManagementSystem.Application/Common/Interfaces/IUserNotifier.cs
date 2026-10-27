@@ -9,6 +9,12 @@ public interface IUserNotifier
         string message,
         CancellationToken cancellationToken);
 
+    /// <summary>Notifies every active admin.</summary>
+    Task NotifyAdminsAsync(
+        string title,
+        string message,
+        CancellationToken cancellationToken);
+
     /// <summary>Notifies every active, approved contact of a client company.</summary>
     Task NotifyClientContactsAsync(
         Guid clientCompanyId,

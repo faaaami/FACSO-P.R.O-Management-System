@@ -38,8 +38,7 @@ public sealed class ClientPaymentsWebhookController : ControllerBase
         typeof(ApiResponse<CompletePaymentFromWebhookResponseDto>),
         StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> HandleWebhook(
         CancellationToken cancellationToken)
@@ -80,57 +79,39 @@ public sealed class ClientPaymentsWebhookController : ControllerBase
                     "Webhook signature verification failed."));
         }
 
-        // 3. Parse the verified payload.
-        RazorpayPaymentPayload? payload;
+        // 3. Parse the verified payload. From here on every outcome is 200:
+        // a verified event is acknowledged even when it cannot be applied,
+        // otherwise Razorpay retries it and eventually disables the webhook.
+        // Only a body that is not JSON at all is refused - Razorpay never
+        // signs one.
+        RazorpayPaymentPayload payload;
 
         try
         {
             using var document =
                 JsonDocument.Parse(rawBody);
 
-            if (!document.RootElement.TryGetProperty(
-                    "payload", out var payloadEl) ||
-                !payloadEl.TryGetProperty(
-                    "payment", out var paymentEl) ||
-                !paymentEl.TryGetProperty(
-                    "entity", out var entity))
-            {
-                return BadRequest(
-                    ApiResponse<object>.FailureResponse(
-                        "MALFORMED_WEBHOOK",
-                        "Webhook payload is missing payment entity."));
-            }
+            var root = document.RootElement;
 
             var eventName =
-                document.RootElement.TryGetProperty("event", out var evt)
+                root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("event", out var evt) &&
+                evt.ValueKind == JsonValueKind.String
                     ? evt.GetString()
                     : null;
 
-            var id = entity.TryGetProperty("id", out var idEl)
-                ? idEl.GetString()
-                : null;
-            var orderId = entity.TryGetProperty("order_id", out var orderEl)
-                ? orderEl.GetString()
-                : null;
-            var currency = entity.TryGetProperty("currency", out var curEl)
-                ? curEl.GetString()
-                : null;
-            var status = entity.TryGetProperty("status", out var stEl)
-                ? stEl.GetString()
-                : null;
-
-            var amount = entity.TryGetProperty("amount", out var amtEl) &&
-                         amtEl.TryGetInt32(out var amt)
-                ? amt
-                : (int?)null;
+            // payment.* and order.paid events carry payload.payment.entity;
+            // order.paid also carries payload.order.entity.
+            var payment = TryGetEntity(root, "payment");
+            var order = TryGetEntity(root, "order");
 
             payload = new RazorpayPaymentPayload(
                 EventName: eventName ?? string.Empty,
-                PaymentId: id ?? string.Empty,
-                OrderId: orderId ?? string.Empty,
-                AmountInSmallestUnit: amount,
-                Currency: currency ?? string.Empty,
-                PaymentStatus: status ?? string.Empty);
+                PaymentId: GetString(payment, "id"),
+                OrderId: GetString(payment, "order_id") ?? GetString(order, "id"),
+                AmountInSmallestUnit: GetInt(payment, "amount"),
+                Currency: GetString(payment, "currency"),
+                PaymentStatus: GetString(payment, "status"));
         }
         catch (JsonException)
         {
@@ -140,28 +121,13 @@ public sealed class ClientPaymentsWebhookController : ControllerBase
                     "Webhook payload is not valid JSON."));
         }
 
-        // 4. Validate required parsed fields.
-        if (payload is null ||
-            string.IsNullOrWhiteSpace(payload.PaymentId) ||
-            string.IsNullOrWhiteSpace(payload.OrderId) ||
-            !payload.AmountInSmallestUnit.HasValue ||
-            string.IsNullOrWhiteSpace(payload.Currency) ||
-            string.IsNullOrWhiteSpace(payload.EventName) ||
-            string.IsNullOrWhiteSpace(payload.PaymentStatus))
-        {
-            return BadRequest(
-                ApiResponse<object>.FailureResponse(
-                    "MALFORMED_WEBHOOK",
-                    "Webhook payload is missing required fields."));
-        }
-
-        // 5. Complete the payment. The invoice is derived from the persisted
+        // 4. Apply the event. The invoice is derived from the persisted
         // PaymentOrder keyed by order_id - never from arbitrary payload fields.
         var result = await _sender.Send(
             new CompletePaymentFromWebhookCommand(
                 payload.OrderId,
                 payload.PaymentId,
-                payload.AmountInSmallestUnit.Value,
+                payload.AmountInSmallestUnit,
                 payload.Currency,
                 payload.EventName,
                 payload.PaymentStatus,
@@ -174,11 +140,49 @@ public sealed class ClientPaymentsWebhookController : ControllerBase
                 .SuccessResponse(result));
     }
 
+    private static JsonElement? TryGetEntity(
+        JsonElement root,
+        string name)
+    {
+        return root.ValueKind == JsonValueKind.Object &&
+               root.TryGetProperty("payload", out var payloadEl) &&
+               payloadEl.ValueKind == JsonValueKind.Object &&
+               payloadEl.TryGetProperty(name, out var wrapper) &&
+               wrapper.ValueKind == JsonValueKind.Object &&
+               wrapper.TryGetProperty("entity", out var entity) &&
+               entity.ValueKind == JsonValueKind.Object
+            ? entity
+            : null;
+    }
+
+    private static string? GetString(
+        JsonElement? entity,
+        string property)
+    {
+        return entity.HasValue &&
+               entity.Value.TryGetProperty(property, out var value) &&
+               value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+    }
+
+    private static int? GetInt(
+        JsonElement? entity,
+        string property)
+    {
+        return entity.HasValue &&
+               entity.Value.TryGetProperty(property, out var value) &&
+               value.ValueKind == JsonValueKind.Number &&
+               value.TryGetInt32(out var number)
+            ? number
+            : null;
+    }
+
     private sealed record RazorpayPaymentPayload(
         string EventName,
-        string PaymentId,
-        string OrderId,
+        string? PaymentId,
+        string? OrderId,
         int? AmountInSmallestUnit,
-        string Currency,
-        string PaymentStatus);
+        string? Currency,
+        string? PaymentStatus);
 }

@@ -21,11 +21,6 @@ public sealed class FakeRazorpayService : IRazorpayService
     private static int _createOrderCallCount;
     private static int _lastRequestedAmountInSmallestUnit;
     private static string? _lastRequestedCurrency;
-    private static int _closeOrderCallCount;
-    private static string? _lastClosedOrderId;
-    private static readonly HashSet<string> _alreadyClosedOrderIds = new(
-        StringComparer.Ordinal);
-    private static bool _failNextCloseOrder;
 
     /// <summary>
     /// Number of gateway create-order calls made since the last reset. The
@@ -50,42 +45,6 @@ public sealed class FakeRazorpayService : IRazorpayService
         => Volatile.Read(ref _lastRequestedCurrency);
 
     /// <summary>
-    /// Number of gateway close-order calls made since the last reset. Static
-    /// for the same reason as <see cref="CreateOrderCallCount"/>.
-    /// </summary>
-    public static int CloseOrderCallCount
-        => Volatile.Read(ref _closeOrderCallCount);
-
-    /// <summary>
-    /// Gateway order id passed to the most recent close-order call, or
-    /// <c>null</c> when no close has been attempted.
-    /// </summary>
-    public static string? LastClosedOrderId
-        => Volatile.Read(ref _lastClosedOrderId);
-
-    /// <summary>
-    /// Makes the next close-order call fail with
-    /// <see cref="RazorpayCloseOrderException"/>, so tests can assert that a
-    /// gateway-close failure aborts the caller's local transaction instead of
-    /// recording a cancellation the gateway never accepted. Cleared once
-    /// consumed.
-    /// </summary>
-    public static void FailNextCloseOrder()
-        => Volatile.Write(ref _failNextCloseOrder, true);
-
-    /// <summary>
-    /// Marks a gateway order as already closed, so a close-order call for it
-    /// succeeds with <c>WasAlreadyClosed = true</c> and issues no write.
-    /// </summary>
-    public static void MarkGatewayOrderClosed(string razorpayOrderId)
-    {
-        lock (_alreadyClosedOrderIds)
-        {
-            _alreadyClosedOrderIds.Add(razorpayOrderId);
-        }
-    }
-
-    /// <summary>
     /// Clears the recorded gateway interaction. Called from the shared
     /// integration-test base before every test so the counter and the
     /// deterministic order-id sequence never leak between tests.
@@ -95,51 +54,9 @@ public sealed class FakeRazorpayService : IRazorpayService
         Interlocked.Exchange(ref _createOrderCallCount, 0);
         Volatile.Write(ref _lastRequestedAmountInSmallestUnit, 0);
         Volatile.Write(ref _lastRequestedCurrency, null);
-        Interlocked.Exchange(ref _closeOrderCallCount, 0);
-        Volatile.Write(ref _lastClosedOrderId, null);
-        Volatile.Write(ref _failNextCloseOrder, false);
-
-        lock (_alreadyClosedOrderIds)
-        {
-            _alreadyClosedOrderIds.Clear();
-        }
     }
 
     public string KeyId => FakeKeyId;
-
-    public Task<RazorpayCloseOrderResult> CloseOrderAsync(
-        string razorpayOrderId,
-        CancellationToken cancellationToken = default)
-    {
-        Interlocked.Increment(ref _closeOrderCallCount);
-
-        Volatile.Write(ref _lastClosedOrderId, razorpayOrderId);
-
-        bool alreadyClosed;
-
-        lock (_alreadyClosedOrderIds)
-        {
-            alreadyClosed =
-                _alreadyClosedOrderIds.Contains(razorpayOrderId);
-        }
-
-        if (Volatile.Read(ref _failNextCloseOrder))
-        {
-            // Consumed on use so a test that makes several close attempts only
-            // fails the first one.
-            Interlocked.Exchange(ref _failNextCloseOrder, false);
-
-            throw new RazorpayCloseOrderException(
-                "Simulated gateway close failure.",
-                razorpayOrderId);
-        }
-
-        return Task.FromResult(
-            new RazorpayCloseOrderResult(
-                razorpayOrderId,
-                "closed",
-                WasAlreadyClosed: alreadyClosed));
-    }
 
     public Task<RazorpayOrderResult> CreateOrderAsync(
         int amountInSmallestUnit,

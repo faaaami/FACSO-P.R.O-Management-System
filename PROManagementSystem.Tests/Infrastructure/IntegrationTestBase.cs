@@ -87,6 +87,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
             "\"document_versions\", \"notifications\", \"documents\", " +
             "\"retainer_invoices\", \"service_fee_invoices\", " +
             "\"gov_fee_disbursements\", \"payment_orders\", " +
+            "\"webhook_events\", " +
             "\"employees\", \"client_entities\", \"client_companies\", " +
             "\"service_contracts\", \"audit_logs\", " +
             "\"users\"";

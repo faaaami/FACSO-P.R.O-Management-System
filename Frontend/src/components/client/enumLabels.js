@@ -62,6 +62,9 @@ export const PAYMENT_STATUS = {
   4: 'Failed',
   5: 'Cancelled',
   6: 'Refunded',
+  // Money was received but could not be applied automatically; the PRO team
+  // reviews it (refund or allocation).
+  7: 'Received – under review',
 }
 
 export const RETAINER_INVOICE_STATUS = {

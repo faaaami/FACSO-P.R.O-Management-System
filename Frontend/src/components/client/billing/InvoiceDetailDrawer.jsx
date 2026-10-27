@@ -108,10 +108,10 @@ function CancelledPaymentBanner() {
     >
       <XCircle size={14} className="shrink-0 mt-0.5" aria-hidden="true" />
       <div>
-        <p className="font-semibold">This payment was cancelled</p>
+        <p className="font-semibold">This payment did not complete</p>
         <p className="mt-1 font-normal text-[#16181D]/70">
-          The payment order was cancelled before it completed. Nothing was charged — you can
-          start a new payment below.
+          The payment was cancelled or failed before it completed. Nothing was charged — you
+          can start a new payment below.
         </p>
       </div>
     </div>
@@ -152,7 +152,10 @@ function InvoiceDetailDrawer({ kind, id, item, onClose }) {
     if (paymentState !== 'confirming') return
     if (data?.status === 'Paid' || data?.status === 'Void') {
       setPaymentState('idle')
-    } else if (orderStatus === 'Cancelled' || orderStatus === 5) {
+    } else if (
+      orderStatus === 'Cancelled' || orderStatus === 5 ||
+      orderStatus === 'Failed' || orderStatus === 4
+    ) {
       // Both wire forms: PaymentStatus is rendered as a name by the global
       // enum converter, but arrives numeric on any response that escapes it.
       setPaymentState('cancelled')

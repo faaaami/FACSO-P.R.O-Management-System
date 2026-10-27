@@ -30,6 +30,7 @@ public interface IApplicationDbContext
     DbSet<ServiceFeeInvoice> ServiceFeeInvoices { get; }
     DbSet<GovFeeDisbursement> GovFeeDisbursements { get; }
     DbSet<PaymentOrder> PaymentOrders { get; }
+    DbSet<WebhookEvent> WebhookEvents { get; }
     DbSet<ServiceDefinition> ServiceDefinitions { get; }
     DbSet<ServiceStepTemplate> ServiceStepTemplates { get; }
     DbSet<ServiceRequiredDocument> ServiceRequiredDocuments { get; }

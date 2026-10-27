@@ -331,13 +331,15 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
         Assert.True(dbOk);
     }
 
+    // H1: a verified event is never rejected. A payload without a payment
+    // entity used to be a 400; it is now acknowledged and ignored.
     [Fact(DisplayName =
-        "WH6: payload missing payment entity returns 400")]
-    public async Task MissingPaymentEntity_BadRequest()
+        "WH6: verified payload missing payment entity is acknowledged (200) and ignored")]
+    public async Task MissingPaymentEntity_AcknowledgedAndIgnored()
     {
         const string rawBody = "{\"event\":\"payment.captured\",\"payload\":{}}";
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     // ==================================================================
@@ -345,15 +347,16 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
     // ==================================================================
 
     [Fact(DisplayName =
-        "WH7: unknown Razorpay order applies no payment")]
-    public async Task UnknownOrder_NotFound()
+        "WH7: unknown Razorpay order is acknowledged (200) and applies no payment")]
+    public async Task UnknownOrder_AcknowledgedNoPayment()
     {
         var orderGuid = await SeedRetainerOrder("order_tst_ret_0005");
         const string unknownOrder = "order_does_not_exist";
         var rawBody = BuildBody(unknownOrder, "pay_tst_0005", 250000, "AED");
 
+        // H1: 200 instead of 404, so Razorpay does not retry forever.
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var s = await RetainerOrderStateAsync("order_tst_ret_0005");
         Assert.Equal(PaymentStatus.Pending, s.OrderStatus);
@@ -362,8 +365,8 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "WH8: soft-deleted PaymentOrder applies no payment")]
-    public async Task DeletedOrder_NotFound()
+        "WH8: soft-deleted PaymentOrder is acknowledged (200) and applies no payment")]
+    public async Task DeletedOrder_AcknowledgedNoPayment()
     {
         const string orderId = "order_tst_ret_0006";
         var orderGuid = await SeedRetainerOrder(orderId);
@@ -379,7 +382,7 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
 
         var rawBody = BuildBody(orderId, "pay_tst_0006", 250000, "AED");
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         await WithScopeDbContextAsync(db =>
             Assert.Equal(
@@ -390,8 +393,8 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "WH9: missing invoice applies no payment (404)")]
-    public async Task MissingInvoice_NoPayment()
+        "WH9: missing invoice: the capture is recorded for review and nothing is settled (200)")]
+    public async Task MissingInvoice_RequiresReview()
     {
         const string orderId = "order_tst_ret_0007";
         await SeedRetainerOrder(orderId);
@@ -410,17 +413,18 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
 
         var rawBody = BuildBody(orderId, "pay_tst_0007", 250000, "AED");
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
+        // H1: the captured money is kept on the order for an admin to resolve.
         var s = await RetainerOrderStateAsync(orderId);
-        Assert.Equal(PaymentStatus.Pending, s.OrderStatus);
-        Assert.Null(s.PaidAt);
+        Assert.Equal(PaymentStatus.PaidRequiresReview, s.OrderStatus);
+        Assert.Equal("pay_tst_0007", s.RazorpayPaymentId);
         Assert.Equal(0, s.AuditCount);
     }
 
     [Fact(DisplayName =
-        "WH10: void invoice is rejected (409) with no state change")]
-    public async Task VoidInvoice_Rejected()
+        "WH10: capture on a void invoice is recorded for review; the invoice stays void (200)")]
+    public async Task VoidInvoice_RequiresReview()
     {
         const string orderId = "order_tst_ret_0008";
         await SeedRetainerOrder(orderId);
@@ -437,12 +441,12 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
 
         var rawBody = BuildBody(orderId, "pay_tst_0008", 250000, "AED");
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var s = await RetainerOrderStateAsync(orderId);
-        Assert.Equal(PaymentStatus.Pending, s.OrderStatus);
-        Assert.Null(s.PaidAt);
+        Assert.Equal(PaymentStatus.PaidRequiresReview, s.OrderStatus);
         Assert.Equal(RetainerInvoiceStatus.Void, s.InvoiceStatus);
+        Assert.Null(s.InvoicePaidAt);
         Assert.Equal(0, s.AuditCount);
     }
 
@@ -475,44 +479,48 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
         Assert.Equal(firstState.AuditCount, s.AuditCount);
     }
 
+    // H1: money captured on a closed order is never thrown away. While the
+    // invoice is still pending it is the payment the invoice was waiting for.
     [Fact(DisplayName =
-        "WH12: cancelled payment order is rejected (409)")]
-    public async Task CancelledOrder_Rejected()
+        "WH12: a capture on a cancelled order settles the still-pending invoice (200)")]
+    public async Task CancelledOrder_CaptureSettlesPendingInvoice()
     {
         const string orderId = "order_tst_ret_0010";
         var orderGuid = await SeedRetainerOrder(orderId, PaymentStatus.Cancelled);
         var rawBody = BuildBody(orderId, "pay_tst_0010", 250000, "AED");
 
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var s = await RetainerOrderStateAsync(orderId);
-        Assert.Equal(PaymentStatus.Cancelled, s.OrderStatus);
-        Assert.Equal(RetainerInvoiceStatus.Pending, s.InvoiceStatus);
-        Assert.Equal(0, s.AuditCount);
+        Assert.Equal(PaymentStatus.Paid, s.OrderStatus);
+        Assert.Equal(RetainerInvoiceStatus.Paid, s.InvoiceStatus);
+        Assert.Equal(1, s.AuditCount);
     }
 
+    // H1: a failed attempt followed by a successful retry in the same
+    // checkout arrives as a capture on a Failed order.
     [Theory(DisplayName =
-        "WH13: failed/refunded payment order is rejected (409)")]
+        "WH13: a capture on a failed/refunded order settles the still-pending invoice (200)")]
     [InlineData(PaymentStatus.Failed)]
     [InlineData(PaymentStatus.Refunded)]
-    public async Task FailedOrRefundedOrder_Rejected(PaymentStatus status)
+    public async Task FailedOrRefundedOrder_CaptureSettlesPendingInvoice(PaymentStatus status)
     {
         const string orderId = "order_tst_ret_0011";
         var orderGuid = await SeedRetainerOrder(orderId, status);
         var rawBody = BuildBody(orderId, "pay_tst_0011", 250000, "AED");
 
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var s = await RetainerOrderStateAsync(orderId);
-        Assert.Equal(status, s.OrderStatus);
-        Assert.Equal(RetainerInvoiceStatus.Pending, s.InvoiceStatus);
-        Assert.Equal(0, s.AuditCount);
+        Assert.Equal(PaymentStatus.Paid, s.OrderStatus);
+        Assert.Equal(RetainerInvoiceStatus.Paid, s.InvoiceStatus);
+        Assert.Equal(1, s.AuditCount);
     }
 
     [Fact(DisplayName =
-        "WH14: non-captured payment status does not mark paid")]
+        "WH14: non-captured payment status is acknowledged (200) and does not mark paid")]
     public async Task NonCapturedStatus_NotPaid()
     {
         const string orderId = "order_tst_ret_0012";
@@ -522,7 +530,7 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
             status: "authorized");
 
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var s = await RetainerOrderStateAsync(orderId);
         Assert.Equal(PaymentStatus.Pending, s.OrderStatus);
@@ -531,8 +539,8 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "WH15: wrong event name does not mark paid")]
-    public async Task WrongEvent_NotMarkedPaid()
+        "WH15: payment.failed does not mark paid; it marks the order Failed (200)")]
+    public async Task FailedEvent_NotMarkedPaid()
     {
         const string orderId = "order_tst_ret_0013";
         await SeedRetainerOrder(orderId);
@@ -541,17 +549,17 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
             evt: "payment.failed");
 
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var s = await RetainerOrderStateAsync(orderId);
-        Assert.Equal(PaymentStatus.Pending, s.OrderStatus);
+        Assert.Equal(PaymentStatus.Failed, s.OrderStatus);
         Assert.Equal(RetainerInvoiceStatus.Pending, s.InvoiceStatus);
         Assert.Equal(0, s.AuditCount);
     }
 
     [Fact(DisplayName =
-        "WH16: amount mismatch is rejected (409) with no state change")]
-    public async Task AmountMismatch_Rejected()
+        "WH16: amount mismatch is recorded for review and does not settle the invoice (200)")]
+    public async Task AmountMismatch_RequiresReview()
     {
         const string orderId = "order_tst_ret_0014";
         var orderGuid = await SeedRetainerOrder(orderId);
@@ -559,17 +567,17 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
         var rawBody = BuildBody(orderId, "pay_tst_0014", 999999, "AED");
 
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var s = await RetainerOrderStateAsync(orderId);
-        Assert.Equal(PaymentStatus.Pending, s.OrderStatus);
+        Assert.Equal(PaymentStatus.PaidRequiresReview, s.OrderStatus);
         Assert.Equal(RetainerInvoiceStatus.Pending, s.InvoiceStatus);
         Assert.Equal(0, s.AuditCount);
     }
 
     [Fact(DisplayName =
-        "WH17: currency mismatch is rejected (409) with no state change")]
-    public async Task CurrencyMismatch_Rejected()
+        "WH17: currency mismatch is recorded for review and does not settle the invoice (200)")]
+    public async Task CurrencyMismatch_RequiresReview()
     {
         const string orderId = "order_tst_ret_0015";
         await SeedRetainerOrder(orderId);
@@ -577,17 +585,17 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
         var rawBody = BuildBody(orderId, "pay_tst_0015", 250000, "USD");
 
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var s = await RetainerOrderStateAsync(orderId);
-        Assert.Equal(PaymentStatus.Pending, s.OrderStatus);
+        Assert.Equal(PaymentStatus.PaidRequiresReview, s.OrderStatus);
         Assert.Equal(RetainerInvoiceStatus.Pending, s.InvoiceStatus);
         Assert.Equal(0, s.AuditCount);
     }
 
     [Fact(DisplayName =
-        "WH18: payment order invoice-type mismatch is rejected (409)")]
-    public async Task InvoiceTypeMismatch_Rejected()
+        "WH18: payment order invoice-type mismatch is recorded for review, not settled (200)")]
+    public async Task InvoiceTypeMismatch_RequiresReview()
     {
         const string orderId = "order_tst_ret_0016";
         var orderGuid = Guid.NewGuid();
@@ -617,12 +625,15 @@ public class ClientPaymentsWebhookTests : IntegrationTestBase
 
         var rawBody = BuildBody(orderId, "pay_tst_0016", 15000, "AED");
         var response = await PostWebhook(rawBody, Signature(rawBody));
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         await WithScopeDbContextAsync(db =>
         {
             var order = db.PaymentOrders.First(x => x.Id == orderGuid);
-            Assert.Equal(PaymentStatus.Pending, order.Status);
+            Assert.Equal(PaymentStatus.PaidRequiresReview, order.Status);
+            Assert.Equal(
+                RetainerInvoiceStatus.Pending,
+                db.RetainerInvoices.First(x => x.Id == TestDataSeeder.Ids.RetainerInvoiceA).Status);
         });
     }
 

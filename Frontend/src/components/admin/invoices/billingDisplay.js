@@ -114,7 +114,9 @@ export const GOV_FEE_STATUS_KEYS = Object.keys(GOV_FEE_STATUS_VALUES).sort(
  *                            Reimbursed -> success
  *   Payment Order            Created -> neutral, Pending -> warning,
  *                            Paid -> success, Failed -> danger,
- *                            Cancelled / Refunded -> neutral
+ *                            Cancelled / Refunded -> neutral,
+ *                            PaidRequiresReview -> danger (money captured that
+ *                            an admin must refund or allocate)
  *
  * `Void` and `Cancelled` are NEUTRAL rather than danger on purpose: a voided
  * invoice and a cancelled payment order are normal, deliberate terminal records
@@ -150,6 +152,8 @@ export const PAYMENT_STATUS_TONE = {
   4: 'danger',
   5: 'neutral',
   6: 'neutral',
+  7: 'danger',
+  PaidRequiresReview: 'danger',
 }
 
 /**
@@ -392,15 +396,14 @@ export const SERVICE_FEE_EMPTY_TITLE = 'No Service Fee invoices.'
  * control is absent rather than a claim that filtering is unnecessary.
  */
 export const PAYMENT_STATUS_FILTER_COPY =
-  'No status filter is offered here. The payment-order list endpoint accepts a ' +
-  'status parameter, but the backend passes it as text against an integer column, ' +
-  'so the request fails with a server error. The gap is in the backend filter, ' +
-  'not in this page, and the control is withheld until it is fixed.'
+  'Orders marked "Paid – needs review" hold money the gateway captured after the ' +
+  'invoice was already settled, voided, or for the wrong amount. The invoice was ' +
+  'not changed; refund the payment or allocate it.'
 
 /** Payments exposes no per-status counts either, for the same reason. */
 export const PAYMENT_STATUS_COUNT_COPY =
-  'Only a single total is shown for payment orders, because per-status counts would ' +
-  'have to come from the same unusable status filter.'
+  'Payments needing review are gateway captures that could not be applied to their ' +
+  'invoice; each one must be refunded or allocated.'
 
 /**
  * MONEY IS NEVER AGGREGATED IN THIS MODULE, and this is why the copy says so.
@@ -452,53 +455,30 @@ export const IRREVERSIBLE_ACTIONS = {
 /**
  * The mark-paid confirmation has to name the second record it changes.
  *
- * MarkRetainerInvoicePaidCommandHandler and its Service Fee twin each lock the
- * invoice row AND the linked PaymentOrder row in one transaction, set the
- * invoice to Paid and set that order to Paid in the same commit. So marking an
- * invoice paid is not a single-record edit, and a confirmation that described it
- * as one would understate what the button does.
+ * MarkRetainerInvoicePaidCommandHandler and its Service Fee twin lock the
+ * invoice's OPEN payment order (if any) and the invoice in one transaction, set
+ * the invoice to Paid and CANCEL that open order (locally — Razorpay cannot close a
+ * gateway order). Closed orders (cancelled, failed) are left as they are and
+ * no longer block the settlement.
  */
 export const MARK_PAID_SIDE_EFFECT_NOTE =
-  'This also sets the payment order linked to this invoice to Paid, in the same ' +
-  'transaction. Both records change together, and neither can be set back.'
+  'If an online payment is still open for this invoice, it is cancelled in the ' +
+  'same transaction so the client cannot pay twice. If the client pays it anyway, ' +
+  'the payment is flagged "Paid – needs review" for a refund or allocation.'
 
 /**
- * THE VOID CONFIRMATION HAS TO NAME THE GATEWAY CLOSE, FOR THE SAME REASON.
+ * The void confirmation has to name the order it cancels, for the same reason.
  *
- * VoidRetainerInvoiceCommandHandler and its Service Fee twin now lock the linked
- * PaymentOrder, close it with the gateway and set it to Cancelled, then void the
- * invoice — all in one transaction. A confirmation that described voiding as an
- * invoice-only edit would leave the operator thinking any linked gateway order is
- * untouched, and therefore still payable after the invoice they just voided.
+ * VoidRetainerInvoiceCommandHandler and its Service Fee twin lock the invoice's
+ * open PaymentOrder, set it to Cancelled, then void the invoice — all in one
+ * transaction. Razorpay cannot close a gateway order, so a client who still
+ * completes that checkout is not blocked; the webhook records the money as
+ * PaidRequiresReview instead of applying it to the voided invoice.
  */
 export const VOID_SIDE_EFFECT_NOTE =
-  'If a payment order is linked to this invoice, it is closed with the payment ' +
-  'provider and set to Cancelled in the same transaction, so it can no longer be ' +
-  'paid. If the provider will not close it, nothing is voided.'
-
-/**
- * A LINKED ORDER OF `Cancelled` MAKES MARK-PAID PERMANENTLY INAPPLICABLE.
- *
- * MarkRetainerInvoicePaidCommandHandler and its Service Fee twin now treat
- * Cancelled as terminal and refuse the write with a 409. So on such an invoice the
- * button is withheld and replaced by an explanation, rather than rendered disabled:
- * the rest of this file's convention is that a permanently inapplicable action is
- * absent, because a greyed-out button reads as "not right now" and invites a retry
- * that can only ever fail again.
- *
- * VOID IS STILL OFFERED, deliberately. A pending invoice with a cancelled order is
- * exactly the state voiding cleans up, and the void handler is what closes the
- * gateway — so withholding it too would leave the operator with no way forward.
- *
- * The status is matched on the string AND the ordinal, because `PaymentStatus` is
- * rendered by the global JsonStringEnumConverter as a name but arrives as a number
- * on any response that escapes that converter, and "Cancelled" vs 5 is the
- * difference between withholding a button and not.
- */
-export const MARK_PAID_CANCELLED_ORDER_NOTE =
-  'This invoice has a cancelled payment order linked to it, so it cannot be ' +
-  'marked as paid. A cancelled order is closed at the payment provider and can ' +
-  'never be settled. Void the invoice and raise a new payment order instead.'
+  'If an online payment is still open for this invoice, it is cancelled in the ' +
+  'same transaction. If the client pays it anyway, the payment is flagged ' +
+  '"Paid – needs review" for a refund or allocation.'
 
 /**
  * THE VOID REASON IS OPTIONAL, AND THAT IS THE SERVER\'S RULE NOT OURS.
@@ -741,46 +721,39 @@ export const PAYMENT_INVOICE_LABEL_NOTE =
   'types carry an invoice number on both the list and the detail.'
 
 /**
- * CANCELLING A PAYMENT ORDER CLOSES IT AT THE GATEWAY FIRST.
+ * CANCELLING A PAYMENT ORDER IS LOCAL ONLY.
  *
- * CancelPaymentOrderCommandHandler now locks the order, closes the Razorpay order
- * through the gateway, and only then sets Status = Cancelled, stamps CancelledAt
- * and writes the audit row — all in one transaction. So a successful cancel means
- * the money genuinely can no longer be taken on this order, and the copy may say
- * so. It still does NOT refund anything and does NOT touch the linked invoice: an
- * invoice that was Pending stays Pending, and is settled by a new payment order.
- *
- * The duplicate guard in CreatePaymentOrderCommandHandler tests whether an order
- * for the invoice already carries a RazorpayOrderId, NOT the order's status. Since
- * cancellation keeps that id, a cancelled order permanently occupies the slot and a
- * fresh order cannot be raised for that invoice through this path.
+ * CancelPaymentOrderCommandHandler locks the order, sets Status = Cancelled,
+ * stamps CancelledAt and writes the audit row in one transaction. Razorpay
+ * cannot close a gateway order, so the copy must not promise the client can no
+ * longer pay it. It does NOT refund anything and does NOT touch the linked
+ * invoice: an invoice that was Pending stays Pending, and is settled by a new
+ * payment order or a manual mark-paid. An invoice may hold many closed orders
+ * but only one open order at a time.
  */
 export const PAYMENT_CANCEL_NOTE =
-  'This closes the order with the payment provider and sets it to Cancelled ' +
-  'here. It does not refund anything, and it does not change the linked ' +
-  'invoice — an invoice that was pending stays pending.'
+  'This sets the order to Cancelled here. It does not refund anything, and it ' +
+  'does not change the linked invoice — an invoice that was pending stays pending.'
 
 export const PAYMENT_CANCEL_CONSEQUENCE_NOTE =
-  'It cannot be undone, and it blocks this invoice from getting a new payment ' +
-  'order: the server refuses a new order when one already exists for the invoice ' +
-  'with a gateway reference, and cancelling keeps that reference.'
+  'It cannot be undone. The invoice stays payable: the client can start a new ' +
+  'online payment, or the invoice can be marked as paid manually.'
 
 export const PAYMENT_CANCEL_ELIGIBILITY_NOTE =
   'Only an order in Created or Pending can be cancelled. The server rejects the ' +
   'request for any other status.'
 
 /**
- * THE PROVIDER CAN REFUSE, AND IF IT DOES NOTHING HAPPENS AT ALL.
+ * A CLIENT CAN STILL PAY A CANCELLED ORDER.
  *
- * This replaces the old late-payment warning. That warning existed because cancel
- * used to leave the gateway order open, so a client could still settle it against a
- * record reading Cancelled. The gateway order is now closed, so that race is gone —
- * and the residual risk is the opposite one: a close that fails leaves the order
- * open, which is why the failure has to be loud rather than silent.
+ * The gateway order stays payable at Razorpay. A capture on it is never lost: the
+ * webhook settles the invoice if it is still pending, and otherwise flags the
+ * order "Paid – needs review".
  */
 export const PAYMENT_CANCEL_GATEWAY_NOTE =
-  'If the provider will not close the order, the whole cancellation is refused ' +
-  'and nothing changes here — the order stays open and payable.'
+  'The payment provider cannot close the order, so a client who already has the ' +
+  'checkout open can still pay it. Such a payment still settles a pending invoice, ' +
+  'or is flagged "Paid – needs review" if the invoice was settled another way.'
 
 /**
  * Field length ceilings, read off the server\'s validators so the forms do not
@@ -842,16 +815,16 @@ export const BILLING_ACTION_CONFIRMS = {
     tone: 'warning',
     confirmLabel: 'Raise payment order',
     irreversible:
-      'The order is created with the payment gateway, and the server refuses a ' +
-      'second order for an invoice that already has a gateway reference.',
+      'The order is created with the payment gateway. An invoice can have only one ' +
+      'open order at a time; an existing open order is returned instead.',
   },
   [IRREVERSIBLE_ACTIONS.PAYMENT_CANCEL]: {
     title: 'Cancel this payment order?',
     tone: 'danger',
     confirmLabel: 'Cancel payment order',
     irreversible:
-      'There is no route that reopens a cancelled order, and cancelling keeps the ' +
-      'gateway reference, so this invoice can never get a new payment order.',
+      'There is no route that reopens a cancelled order. The invoice stays pending ' +
+      'and can be paid through a new order or marked as paid manually.',
   },
 }
 

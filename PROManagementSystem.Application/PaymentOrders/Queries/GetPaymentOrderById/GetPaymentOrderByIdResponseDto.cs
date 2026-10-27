@@ -17,5 +17,8 @@ public sealed record GetPaymentOrderByIdResponseDto(
     DateTime? CancelledAt,
     string? Notes,
     DateTime CreatedAt,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    decimal? CapturedAmount,
+    string? CapturedCurrency,
+    string? ReviewReason
 );

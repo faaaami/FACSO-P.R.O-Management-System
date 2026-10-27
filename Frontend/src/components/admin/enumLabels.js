@@ -121,7 +121,8 @@ export const PAYMENT_INVOICE_TYPES = {
 }
 
 /**
- * PaymentStatus — 1=Created, 2=Pending, 3=Paid, 4=Failed, 5=Cancelled, 6=Refunded.
+ * PaymentStatus — 1=Created, 2=Pending, 3=Paid, 4=Failed, 5=Cancelled, 6=Refunded,
+ * 7=PaidRequiresReview (money captured that could not be applied to the invoice).
  * Numeric: PaymentOrderDto.Status is declared `int`, so this arrives as a number.
  */
 export const PAYMENT_STATUS = {
@@ -131,6 +132,8 @@ export const PAYMENT_STATUS = {
   4: 'Failed',
   5: 'Cancelled',
   6: 'Refunded',
+  7: 'Paid – needs review',
+  PaidRequiresReview: 'Paid – needs review',
 }
 
 /** DocumentStatus / DocumentType arrive string-serialized like every other enum. */

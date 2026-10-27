@@ -74,6 +74,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<PaymentOrder> PaymentOrders =>
         Set<PaymentOrder>();
 
+    public DbSet<WebhookEvent> WebhookEvents => Set<WebhookEvent>();
+
     public DbSet<ServiceDefinition> ServiceDefinitions => Set<ServiceDefinition>();
 
     public DbSet<ServiceStepTemplate> ServiceStepTemplates => Set<ServiceStepTemplate>();

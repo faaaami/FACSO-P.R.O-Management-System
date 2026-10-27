@@ -7,6 +7,15 @@ namespace PROManagementSystem.Infrastructure.Persistence.Configurations;
 public sealed class PaymentOrderConfiguration
     : IEntityTypeConfiguration<PaymentOrder>
 {
+    public const string OpenRetainerOrderIndexName =
+        "IX_payment_orders_RetainerInvoiceId_Open";
+
+    public const string OpenServiceFeeOrderIndexName =
+        "IX_payment_orders_ServiceFeeInvoiceId_Open";
+
+    private const string OpenOrderFilter =
+        "\"IsDeleted\" = false AND \"Status\" IN (1, 2)";
+
     public void Configure(
         EntityTypeBuilder<PaymentOrder> builder)
     {
@@ -47,6 +56,18 @@ public sealed class PaymentOrderConfiguration
             .HasMaxLength(500);
 
         builder
+            .Property(x => x.CapturedAmount)
+            .HasPrecision(18, 2);
+
+        builder
+            .Property(x => x.CapturedCurrency)
+            .HasMaxLength(10);
+
+        builder
+            .Property(x => x.ReviewReason)
+            .HasMaxLength(500);
+
+        builder
             .Property(x => x.Notes)
             .HasMaxLength(5000);
 
@@ -72,14 +93,23 @@ public sealed class PaymentOrderConfiguration
             .HasIndex(x => x.InvoiceType);
 
         builder
-            .HasIndex(x => x.RetainerInvoiceId)
-            .IsUnique()
-            .HasFilter("\"IsDeleted\" = false");
+            .HasIndex(x => x.RetainerInvoiceId);
 
         builder
-            .HasIndex(x => x.ServiceFeeInvoiceId)
+            .HasIndex(x => x.ServiceFeeInvoiceId);
+
+        // An invoice may have many payment orders over time (cancelled,
+        // failed, paid), but at most ONE open order (Created = 1,
+        // Pending = 2) at any moment.
+        builder
+            .HasIndex(x => x.RetainerInvoiceId, OpenRetainerOrderIndexName)
             .IsUnique()
-            .HasFilter("\"IsDeleted\" = false");
+            .HasFilter(OpenOrderFilter);
+
+        builder
+            .HasIndex(x => x.ServiceFeeInvoiceId, OpenServiceFeeOrderIndexName)
+            .IsUnique()
+            .HasFilter(OpenOrderFilter);
 
         builder
             .HasIndex(x => x.ClientCompanyId);

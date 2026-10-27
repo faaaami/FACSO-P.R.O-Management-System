@@ -14,12 +14,12 @@ public sealed class CreatePaymentOrderCommandHandler
 {
     /// <summary>
     /// Statuses in which an existing PaymentOrder is still a live, resumable
-    /// checkout. This is deliberately the same set the webhook treats as
-    /// completable (<c>CompletePaymentFromWebhookCommandHandler
-    /// .CompletableStatuses</c>), so an order handed back for reuse is
-    /// always an order the webhook would still accept payment for. Every
-    /// other status - Paid, Cancelled, and the currently-unused
-    /// Failed/Refunded - is terminal and is never resurrected or repurposed.
+    /// checkout ("open"). An invoice may carry any number of closed orders
+    /// (Paid, Failed, Cancelled, Refunded, PaidRequiresReview) but at most one
+    /// open order, enforced by the filtered unique indexes
+    /// <c>IX_payment_orders_*InvoiceId_Open</c>. A closed order is never
+    /// resurrected or repurposed; a pending invoice whose orders are all
+    /// closed simply gets a new one.
     /// </summary>
     private static readonly HashSet<PaymentStatus> ReusableStatuses =
         new()
@@ -110,6 +110,8 @@ public sealed class CreatePaymentOrderCommandHandler
                             PaymentInvoiceType.RetainerInvoice &&
                         x.RetainerInvoiceId ==
                             request.RetainerInvoiceId &&
+                        (x.Status == PaymentStatus.Created ||
+                         x.Status == PaymentStatus.Pending) &&
                         !x.IsDeleted,
                     cancellationToken);
 
@@ -121,6 +123,12 @@ public sealed class CreatePaymentOrderCommandHandler
                 request.RetainerInvoiceId.Value,
                 cancellationToken);
         }
+
+        await EnsureNoSettledOrderAsync(
+            PaymentInvoiceType.RetainerInvoice,
+            request.RetainerInvoiceId.Value,
+            "retainer invoice",
+            cancellationToken);
 
         return await CreateNewOrderAsync(
             new NewOrderDetails(
@@ -179,6 +187,8 @@ public sealed class CreatePaymentOrderCommandHandler
                             PaymentInvoiceType.ServiceFeeInvoice &&
                         x.ServiceFeeInvoiceId ==
                             request.ServiceFeeInvoiceId &&
+                        (x.Status == PaymentStatus.Created ||
+                         x.Status == PaymentStatus.Pending) &&
                         !x.IsDeleted,
                     cancellationToken);
 
@@ -190,6 +200,12 @@ public sealed class CreatePaymentOrderCommandHandler
                 request.ServiceFeeInvoiceId.Value,
                 cancellationToken);
         }
+
+        await EnsureNoSettledOrderAsync(
+            PaymentInvoiceType.ServiceFeeInvoice,
+            request.ServiceFeeInvoiceId.Value,
+            "service fee invoice",
+            cancellationToken);
 
         return await CreateNewOrderAsync(
             new NewOrderDetails(
@@ -216,9 +232,8 @@ public sealed class CreatePaymentOrderCommandHandler
         Guid invoiceId,
         CancellationToken cancellationToken)
     {
-        // Terminal states are never resumed and never repurposed. The
-        // message names the actual blocking status instead of implying the
-        // invoice was already settled.
+        // Only open orders are looked up, but the snapshot can be stale.
+        // A closed order is never resumed or repurposed.
         if (!ReusableStatuses.Contains(existingOrder.Status))
         {
             throw BuildTerminalConflict(
@@ -403,8 +418,8 @@ public sealed class CreatePaymentOrderCommandHandler
         catch (DbUpdateException ex) when (
             IsPaymentOrderUniqueViolation(ex))
         {
-            // A concurrent request inserted this invoice's order between our
-            // lookup and this insert. The filtered unique index is the
+            // A concurrent request inserted this invoice's open order between
+            // our lookup and this insert. The filtered unique index is the
             // database-level backstop; adopt the winning row instead of
             // surfacing a 500. Any other database error is not caught here
             // and propagates unchanged.
@@ -421,6 +436,8 @@ public sealed class CreatePaymentOrderCommandHandler
                                 details.RetainerInvoiceId &&
                             x.ServiceFeeInvoiceId ==
                                 details.ServiceFeeInvoiceId &&
+                            (x.Status == PaymentStatus.Created ||
+                             x.Status == PaymentStatus.Pending) &&
                             !x.IsDeleted,
                         cancellationToken);
 
@@ -455,11 +472,36 @@ public sealed class CreatePaymentOrderCommandHandler
                     paymentOrder.Id.ToString("N"),
                     cancellationToken);
 
+        // Conditional claim: the order was committed as Created before the
+        // gateway call, so a manual mark-paid or void may have cancelled it
+        // in the meantime. Never overwrite that cancellation with Pending.
+        var pendingAt = DateTime.UtcNow;
+
+        var claimed =
+            await _context.PaymentOrders
+                .Where(x =>
+                    x.Id == paymentOrder.Id &&
+                    x.Status == PaymentStatus.Created)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(x => x.RazorpayOrderId, razorpayOrder.OrderId)
+                        .SetProperty(x => x.Status, PaymentStatus.Pending)
+                        .SetProperty(x => x.UpdatedAt, pendingAt),
+                    cancellationToken);
+
+        if (claimed == 0)
+        {
+            // The new gateway order is left unreferenced (Razorpay cannot
+            // close it). It was never returned to the client, and a capture
+            // on it would arrive as an unknown order and notify admins.
+            throw new ConflictException(
+                $"The {details.InvoiceKind} changed while the payment was " +
+                "being prepared. Please refresh and try again.");
+        }
+
         paymentOrder.RazorpayOrderId = razorpayOrder.OrderId;
         paymentOrder.Status = PaymentStatus.Pending;
-        paymentOrder.UpdatedAt = DateTime.UtcNow;
-
-        await _context.SaveChangesAsync(cancellationToken);
+        paymentOrder.UpdatedAt = pendingAt;
 
         return MapToResponse(paymentOrder);
     }
@@ -467,6 +509,50 @@ public sealed class CreatePaymentOrderCommandHandler
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Money already captured under a still-Pending invoice - a Paid order
+    /// (the records drifted apart) or a PaidRequiresReview order (e.g. an
+    /// amount or currency mismatch) - means another checkout could charge
+    /// the client twice, so the invoice must be reconciled by an admin first.
+    /// </summary>
+    private async Task EnsureNoSettledOrderAsync(
+        PaymentInvoiceType invoiceType,
+        Guid invoiceId,
+        string invoiceKind,
+        CancellationToken cancellationToken)
+    {
+        var capturedStatus =
+            await _context.PaymentOrders
+                .AsNoTracking()
+                .Where(
+                    x =>
+                        x.InvoiceType == invoiceType &&
+                        (invoiceType == PaymentInvoiceType.RetainerInvoice
+                            ? x.RetainerInvoiceId == invoiceId
+                            : x.ServiceFeeInvoiceId == invoiceId) &&
+                        (x.Status == PaymentStatus.Paid ||
+                         x.Status == PaymentStatus.PaidRequiresReview) &&
+                        !x.IsDeleted)
+                .Select(x => (PaymentStatus?)x.Status)
+                .FirstOrDefaultAsync(cancellationToken);
+
+        if (capturedStatus == PaymentStatus.PaidRequiresReview)
+        {
+            throw new ConflictException(
+                $"A payment for this {invoiceKind} was received and is " +
+                "awaiting review by the PRO team. A new payment cannot be " +
+                "taken until it is resolved.");
+        }
+
+        if (capturedStatus == PaymentStatus.Paid)
+        {
+            throw new ConflictException(
+                $"A completed payment already exists for this {invoiceKind}. " +
+                "An admin must reconcile the invoice before a new payment " +
+                "can be taken.");
+        }
+    }
 
     private void EnsureInvoiceOwnership(Guid clientCompanyId)
     {
@@ -528,8 +614,8 @@ public sealed class CreatePaymentOrderCommandHandler
         string invoiceKind)
     {
         return new ConflictException(
-            $"A payment order in {status} already exists for this " +
-            $"{invoiceKind}.");
+            $"The payment order for this {invoiceKind} changed to " +
+            $"{status} while it was being prepared. Please retry.");
     }
 
     /// <summary>
@@ -554,8 +640,8 @@ public sealed class CreatePaymentOrderCommandHandler
 
     /// <summary>
     /// Returns <c>true</c> when the <see cref="DbUpdateException"/> is the
-    /// filtered-unique one-payment-order-per-invoice violation (PostgreSQL
-    /// error code 23505) and nothing else.
+    /// filtered-unique one-open-payment-order-per-invoice violation
+    /// (PostgreSQL error code 23505) and nothing else.
     /// </summary>
     private static bool IsPaymentOrderUniqueViolation(
         DbUpdateException ex)
@@ -567,8 +653,8 @@ public sealed class CreatePaymentOrderCommandHandler
         var inner = ex.InnerException?.Message ?? ex.Message;
 
         return inner.Contains("23505") &&
-               (inner.Contains("IX_payment_orders_RetainerInvoiceId") ||
-                inner.Contains("IX_payment_orders_ServiceFeeInvoiceId"));
+               (inner.Contains("IX_payment_orders_RetainerInvoiceId_Open") ||
+                inner.Contains("IX_payment_orders_ServiceFeeInvoiceId_Open"));
     }
 
     private sealed record NewOrderDetails(
