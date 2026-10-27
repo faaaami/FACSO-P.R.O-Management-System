@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Configuration;
 using PROManagementSystem.Api.Common;
 using Xunit;
@@ -10,19 +11,35 @@ namespace PROManagementSystem.Tests.Security;
 /// </summary>
 public sealed class StartupConfigurationValidatorTests
 {
-    private static string ApiProjectDirectory()
+    /// <summary>
+    /// Finds the API project by walking up from the test output folder, and
+    /// failing that from this source file, so the tests still find it when
+    /// the output is redirected outside the repo (e.g. a custom
+    /// BaseOutputPath).
+    /// </summary>
+    private static string ApiProjectDirectory(
+        [CallerFilePath] string sourceFile = "")
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory is not null)
+        var starts = new[]
         {
-            var candidate = Path.Combine(directory.FullName, "PROManagementSystem");
-            if (File.Exists(Path.Combine(candidate, "appsettings.Production.json")))
-            {
-                return candidate;
-            }
+            AppContext.BaseDirectory,
+            Path.GetDirectoryName(sourceFile) ?? string.Empty
+        };
 
-            directory = directory.Parent;
+        foreach (var start in starts.Where(x => x.Length > 0))
+        {
+            var directory = new DirectoryInfo(start);
+
+            while (directory is not null)
+            {
+                var candidate = Path.Combine(directory.FullName, "PROManagementSystem");
+                if (File.Exists(Path.Combine(candidate, "appsettings.Production.json")))
+                {
+                    return candidate;
+                }
+
+                directory = directory.Parent;
+            }
         }
 
         throw new InvalidOperationException("API project directory not found.");

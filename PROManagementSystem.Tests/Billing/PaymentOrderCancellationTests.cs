@@ -564,7 +564,7 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "P5-V8: void racing mark-paid never leaves a paid order under a voided invoice")]
+        "P5-V8: void racing mark-paid never leaves a live order or a paid order under a voided invoice")]
     public async Task VoidRetainer_RacingMarkPaid_NeverHidesASettlement()
     {
         // Void and mark-paid take the same order row lock in the same order, so
@@ -597,21 +597,24 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
         }
         else
         {
-            // Mark-paid won: a void must never overwrite a settlement.
+            // Mark-paid won: a void must never overwrite a settlement. The
+            // money arrived outside the gateway, so the order is cancelled
+            // rather than paid.
             Assert.Equal(RetainerInvoiceStatus.Paid, invoiceStatus);
-            Assert.Equal(PaymentStatus.Paid, stored!.Status);
-            Assert.NotNull(stored.PaidAt);
+            Assert.Equal(PaymentStatus.Cancelled, stored!.Status);
+            Assert.Null(stored.PaidAt);
         }
     }
 
     [Fact(DisplayName =
         "P5-C9: racing create and cancel never leaves two live gateway orders on one invoice")]
-    public async Task Cancel_RacingCreate_LeavesAtMostOneOrder()
+    public async Task Cancel_RacingCreate_LeavesAtMostOneOpenOrder()
     {
-        // The invoice already has a gateway-backed order, so a second create must
-        // be refused. Racing it against the cancel proves the guard is not a
-        // read-then-write that a cancel can slip between: the worst outcome would
-        // be a cancelled order plus a freshly payable one for the same invoice.
+        // If the create runs first it resumes the existing order, which the
+        // cancel then retires. If the cancel runs first, the create raises a
+        // fresh order (review item C2: a cancelled order must not leave the
+        // invoice unpayable). The invariant is that the invoice never has two
+        // OPEN orders at once.
         await SeedRetainerOrderAsync("order_p5_c9");
 
         var orderId = (await ReadRetainerOrderAsync())!.Id;
@@ -636,18 +639,23 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
         // both be satisfied on every run and the test was order-dependent.
         //
         // What the race is actually for is the invariant asserted below, and that
-        // is checked on the stored rows rather than on the HTTP status codes:
-        // exactly one order survives and it is Cancelled with its gateway reference
-        // intact. Whether the losing request answered 409 or the winning create
-        // answered 201 does not change any of that, so the status codes are only
-        // range-checked and the correctness property is asserted where it is
-        // deterministic.
+        // is checked on the stored rows rather than on the HTTP status codes.
 
         var orders = await ReadAllRetainerOrdersAsync();
 
-        Assert.Single(orders);
-        Assert.Equal(PaymentStatus.Cancelled, orders[0].Status);
-        Assert.NotNull(orders[0].RazorpayOrderId);
+        // The original order is retired with its gateway reference intact.
+        var original = Assert.Single(orders, x => x.Id == orderId);
+        Assert.Equal(PaymentStatus.Cancelled, original.Status);
+        Assert.NotNull(original.RazorpayOrderId);
+
+        // At most one other order, and it is the only open one.
+        Assert.True(orders.Count <= 2, $"{orders.Count} orders");
+        Assert.True(
+            orders.Count(x =>
+                x.Status is PaymentStatus.Created or PaymentStatus.Pending) <= 1);
+        Assert.Equal(
+            orders.Count,
+            orders.Select(x => x.RazorpayOrderId).Distinct().Count());
     }
 
     [Fact(DisplayName =

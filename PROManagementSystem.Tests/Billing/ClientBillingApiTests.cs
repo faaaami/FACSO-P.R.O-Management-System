@@ -639,10 +639,12 @@ public class ClientBillingApiTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "G4-D: Cancelled order is terminal and is not reused (409)")]
-    public async Task CreateOrder_CancelledOrder_Conflict()
+        "G4-D: Cancelled order is terminal and not reused; a new order is created")]
+    public async Task CreateOrder_CancelledOrder_CreatesNewOrder()
     {
-        await SeedOrderAsync(
+        // Review item C2: a cancelled order must not leave the invoice
+        // unpayable. It is never resumed, so a fresh order is raised instead.
+        var cancelled = await SeedOrderAsync(
             retainerInvoiceId: TestDataSeeder.Ids.RetainerInvoiceA,
             status: PaymentStatus.Cancelled);
 
@@ -654,9 +656,14 @@ public class ClientBillingApiTests : IntegrationTestBase
                 invoiceId = TestDataSeeder.Ids.RetainerInvoiceA
             });
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal("CONFLICT", await ErrorCodeAsync(response));
-        Assert.Equal(0, FakeRazorpayService.CreateOrderCallCount);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, FakeRazorpayService.CreateOrderCallCount);
+        Assert.Equal(2, await PaymentOrderCountAsync());
+
+        var reloaded = await ReloadOrderAsync(cancelled.Id);
+        Assert.Equal(PaymentStatus.Cancelled, reloaded.Status);
+        Assert.Equal(cancelled.RazorpayOrderId, reloaded.RazorpayOrderId);
+        Assert.Equal(cancelled.UpdatedAt, reloaded.UpdatedAt);
     }
 
     [Fact(DisplayName =
