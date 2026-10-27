@@ -187,6 +187,10 @@ migrations on start (`Database__MigrateOnStartup=true`) and trusts the proxy's
 rate limit sees real client addresses. Terminate TLS in front of port 8080 and
 schedule `deploy/backup.sh` (database dump + uploaded documents).
 
+**Azure.** [`deploy/azure/README.md`](deploy/azure/README.md) deploys the same
+setup to Azure Container Apps (Bicep template plus a GitHub Actions workflow
+that deploys `main` after CI passes).
+
 **OCR on Linux.** The Linux binaries inside the Tesseract NuGet package need
 OpenSSL 3.2+, which Debian 12 / Ubuntu 24.04 (the .NET images) do not have, so
 OCR silently failed on Linux. The API image installs the distribution's

@@ -1035,6 +1035,19 @@ if (app.Configuration.GetValue<bool>("ForwardedHeaders:Enabled"))
     };
     forwardedOptions.KnownIPNetworks.Clear();
     forwardedOptions.KnownProxies.Clear();
+
+    // With several proxies in front (e.g. Azure Container Apps ingress ->
+    // nginx -> internal ingress) the last X-Forwarded-For entry is a proxy,
+    // not the client. The web container can instead pass the client address
+    // in a header of its own (nginx CLIENT_IP), named here.
+    var clientIpHeader =
+        app.Configuration["ForwardedHeaders:ClientIpHeader"];
+
+    if (!string.IsNullOrWhiteSpace(clientIpHeader))
+    {
+        forwardedOptions.ForwardedForHeaderName = clientIpHeader;
+    }
+
     app.UseForwardedHeaders(forwardedOptions);
 }
 
