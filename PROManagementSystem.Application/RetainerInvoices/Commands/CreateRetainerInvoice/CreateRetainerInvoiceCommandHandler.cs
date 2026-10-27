@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Exceptions;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Notifications;
 using PROManagementSystem.Domain.Entities;
 using PROManagementSystem.Domain.Enums;
 
@@ -14,13 +15,16 @@ public sealed class CreateRetainerInvoiceCommandHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly IUserNotifier _notifier;
 
     public CreateRetainerInvoiceCommandHandler(
         IApplicationDbContext context,
-        ICurrentUserService currentUser)
+        ICurrentUserService currentUser,
+        IUserNotifier notifier)
     {
         _context = context;
         _currentUser = currentUser;
+        _notifier = notifier;
     }
 
     public async Task<CreateRetainerInvoiceResponseDto> Handle(
@@ -163,6 +167,18 @@ public sealed class CreateRetainerInvoiceCommandHandler
         };
 
         _context.AuditLogs.Add(auditLog);
+
+        // The client is told the invoice is ready to pay. The notifier saves
+        // the invoice, the audit row and the notifications in one write.
+        await _notifier.NotifyClientContactsAsync(
+            invoice.ClientCompanyId,
+            "New invoice",
+            NotificationLabels.NewInvoice(
+                invoice.InvoiceNumber,
+                invoice.Amount,
+                invoice.Currency,
+                invoice.DueDate),
+            cancellationToken);
 
         await _context.SaveChangesAsync(
             cancellationToken);

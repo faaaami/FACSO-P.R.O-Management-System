@@ -12,8 +12,15 @@ namespace PROManagementSystem.Tests.Billing;
 
 /// <summary>
 /// Hi-1: Payment consistency between manual mark-invoice-paid and the Razorpay
-/// webhook.  Both paths must produce a consistent Paid+Paid (invoice + order)
-/// state and tolerate all concurrency/ordering combinations.
+/// webhook, under every ordering and race.
+/// <para>
+/// Manual mark-paid means the money arrived outside the gateway, so it settles
+/// the invoice and CANCELS any open order (review item C2). A capture that
+/// arrives after that is never rejected or lost: it is recorded on the order
+/// as PaidRequiresReview and the invoice is left alone (review item H1). The
+/// invariants are that the invoice is settled exactly once, its PaidAt never
+/// moves, and captured money is always recorded on its order.
+/// </para>
 /// </summary>
 [Collection(DatabaseCollection.Name)]
 public class PaymentConsistencyTests : IntegrationTestBase
@@ -201,6 +208,31 @@ public class PaymentConsistencyTests : IntegrationTestBase
         return (invStatus, invPaidAt, orderStatus, orderPaidAt);
     }
 
+    private async Task<PaymentOrder> GetOrderAsync()
+    {
+        PaymentOrder? order = null;
+
+        await WithScopeDbContextAsync(db =>
+            order = db.PaymentOrders
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Single(x =>
+                    x.RetainerInvoiceId ==
+                    TestDataSeeder.Ids.RetainerInvoiceA &&
+                    !x.IsDeleted));
+
+        return order!;
+    }
+
+    private static async Task<string> OutcomeAsync(
+        HttpResponseMessage response)
+    {
+        var body = System.Text.Json.Nodes.JsonNode.Parse(
+            await response.Content.ReadAsStringAsync())!;
+
+        return (string)body["data"]!["outcome"]!;
+    }
+
     private Task<HttpResponseMessage> PostMarkPaidAsync()
     {
         var url = string.Format(
@@ -266,8 +298,8 @@ public class PaymentConsistencyTests : IntegrationTestBase
     // ==================================================================
 
     [Fact(DisplayName =
-        "Hi-1.1: manual mark-paid sets both invoice and order to Paid")]
-    public async Task ManualPaid_WithOrder_BothPaid()
+        "Hi-1.1: manual mark-paid settles the invoice and cancels its open order")]
+    public async Task ManualPaid_WithOrder_InvoicePaid_OrderCancelled()
     {
         var orderGuid = Guid.NewGuid();
         const string razorpayId = "order_hi1_0001";
@@ -281,7 +313,7 @@ public class PaymentConsistencyTests : IntegrationTestBase
 
         Assert.Equal(RetainerInvoiceStatus.Paid, invStatus);
         Assert.NotNull(orderStatus);
-        Assert.Equal(PaymentStatus.Paid, orderStatus.Value);
+        Assert.Equal(PaymentStatus.Cancelled, orderStatus.Value);
         Assert.Equal(1, auditCount);
     }
 
@@ -313,8 +345,8 @@ public class PaymentConsistencyTests : IntegrationTestBase
     // ==================================================================
 
     [Fact(DisplayName =
-        "Hi-1.3: webhook after manual mark-paid is an idempotent no-op")]
-    public async Task ManualPaid_ThenWebhook_Idempotent()
+        "Hi-1.3: a capture after manual mark-paid is recorded for review and leaves the invoice alone")]
+    public async Task ManualPaid_ThenWebhook_HeldForReview()
     {
         var orderGuid = Guid.NewGuid();
         const string razorpayId = "order_hi1_0003";
@@ -325,16 +357,16 @@ public class PaymentConsistencyTests : IntegrationTestBase
 
         var webhook = await PostWebhookDirectAsync(razorpayId);
         Assert.Equal(HttpStatusCode.OK, webhook.StatusCode);
-
-        var body = System.Text.Json.Nodes.JsonNode.Parse(
-            await webhook.Content.ReadAsStringAsync())!;
-        Assert.False((bool)body["data"]!["completed"]!);
+        Assert.Equal("RequiresReview", await OutcomeAsync(webhook));
 
         var (invStatus, orderStatus, auditCount) =
             await GetStateAsync();
 
+        // The invoice was already settled and is not touched again; the
+        // late money is kept on the order for an admin to refund or allocate.
         Assert.Equal(RetainerInvoiceStatus.Paid, invStatus);
-        Assert.Equal(PaymentStatus.Paid, orderStatus!.Value);
+        Assert.Equal(PaymentStatus.PaidRequiresReview, orderStatus!.Value);
+        Assert.Equal("pay_hi1_0001", (await GetOrderAsync()).RazorpayPaymentId);
         Assert.Equal(1, auditCount);
     }
 
@@ -373,7 +405,7 @@ public class PaymentConsistencyTests : IntegrationTestBase
     // ==================================================================
 
     [Fact(DisplayName =
-        "Hi-1.5: concurrent manual + webhook produce a consistent final state")]
+        "Hi-1.5: concurrent manual + webhook settle the invoice once and never lose the payment")]
     public async Task ConcurrentManualAndWebhook_ConsistentState()
     {
         var orderGuid = Guid.NewGuid();
@@ -384,31 +416,35 @@ public class PaymentConsistencyTests : IntegrationTestBase
             Task.Run(() => PostMarkPaidAsync()),
             Task.Run(() => PostWebhookDirectAsync(razorpayId)));
 
-        var statuses = results
-            .Select(r => r.StatusCode)
-            .OrderBy(s => s)
-            .ToList();
-
-        // Exactly one succeeds (200), one is idempotent (200) or
-        // rejected (409).  Both are valid: the FOR UPDATE serialises
-        // them so only one performs the transition.
-        Assert.All(statuses, s =>
+        // The FOR UPDATE locks serialise the two. Whichever runs second
+        // either answers 409 (manual) or records the capture for review
+        // (webhook, 200).
+        Assert.All(results, r =>
             Assert.True(
-                s == HttpStatusCode.OK ||
-                s == HttpStatusCode.Conflict,
-                $"Unexpected status: {s}"));
+                r.StatusCode == HttpStatusCode.OK ||
+                r.StatusCode == HttpStatusCode.Conflict,
+                $"Unexpected status: {r.StatusCode}"));
 
         var (invStatus, orderStatus, _) = await GetStateAsync();
 
         Assert.Equal(RetainerInvoiceStatus.Paid, invStatus);
-        Assert.Equal(PaymentStatus.Paid, orderStatus!.Value);
 
-        // Exactly one manual audit and at most one webhook audit.
+        // Webhook first: the order settled the invoice. Manual first: the
+        // order was cancelled and the capture is held for review.
+        Assert.Contains(
+            orderStatus!.Value,
+            new[] { PaymentStatus.Paid, PaymentStatus.PaidRequiresReview });
+
+        // Either way the captured money is recorded on the order...
+        Assert.Equal("pay_hi1_0001", (await GetOrderAsync()).RazorpayPaymentId);
+
+        // ...and the invoice was settled by exactly one of the two paths.
         var (manualAudit, webhookAudit) =
             await GetAuditCountsAsync();
 
-        Assert.True(manualAudit + webhookAudit >= 1);
-        Assert.True(manualAudit + webhookAudit <= 2);
+        Assert.Equal(1, manualAudit + webhookAudit);
+        Assert.Equal(
+            orderStatus.Value == PaymentStatus.Paid ? 1 : 0, webhookAudit);
     }
 
     // ==================================================================
@@ -460,7 +496,7 @@ public class PaymentConsistencyTests : IntegrationTestBase
         var (invStatus, orderStatus, _) = await GetStateAsync();
 
         Assert.Equal(RetainerInvoiceStatus.Paid, invStatus);
-        Assert.Equal(PaymentStatus.Paid, orderStatus!.Value);
+        Assert.Equal(PaymentStatus.Cancelled, orderStatus!.Value);
     }
 
     // ==================================================================
@@ -471,6 +507,10 @@ public class PaymentConsistencyTests : IntegrationTestBase
     // when a document was FIRST settled: it is written on the transition to
     // Paid, and no later call - repeated manual, repeated webhook, the other
     // path arriving late, or a concurrent race - may move it.
+    //
+    // A manual settlement cancels the open order rather than paying it, so
+    // only the invoice gains a PaidAt; the order's CancelledAt shares the
+    // same timestamp because both are written by the same call.
     //
     // Timestamps are compared by capturing the value before the call and
     // comparing after, never by expecting two independent writes to be
@@ -506,8 +546,8 @@ public class PaymentConsistencyTests : IntegrationTestBase
     // ------------------------------------------------------------------
 
     [Fact(DisplayName =
-        "D4-B: manual mark-paid settles a Created order and gives the pair one equal PaidAt")]
-    public async Task D4_B_ManualPaid_CreatedOrder_SettlesBoth()
+        "D4-B: manual mark-paid cancels a Created order; only the invoice gains a PaidAt")]
+    public async Task D4_B_ManualPaid_CreatedOrder_CancelsOrder()
     {
         await SeedRetainerOrder(
             Guid.NewGuid(), "order_d4_0002", PaymentStatus.Created);
@@ -525,11 +565,13 @@ public class PaymentConsistencyTests : IntegrationTestBase
             await GetPaidAtStateAsync();
 
         Assert.Equal(RetainerInvoiceStatus.Paid, invStatus);
-        Assert.Equal(PaymentStatus.Paid, orderStatus!.Value);
-
-        // Both were settled by the same call, so they carry the same stamp.
+        Assert.Equal(PaymentStatus.Cancelled, orderStatus!.Value);
         Assert.NotNull(invPaidAt);
-        Assert.Equal(invPaidAt, orderPaidAt);
+
+        // No gateway payment backs the order, so it never gains a PaidAt;
+        // it is retired by the same call that settled the invoice.
+        Assert.Null(orderPaidAt);
+        Assert.Equal(invPaidAt, (await GetOrderAsync()).CancelledAt);
     }
 
     // ------------------------------------------------------------------
@@ -537,14 +579,15 @@ public class PaymentConsistencyTests : IntegrationTestBase
     // ------------------------------------------------------------------
 
     [Fact(DisplayName =
-        "D4-C: manual mark-paid settles a Pending order and gives the pair one equal PaidAt")]
-    public async Task D4_C_ManualPaid_PendingOrder_SettlesBoth()
+        "D4-C: manual mark-paid cancels a Pending order; only the invoice gains a PaidAt")]
+    public async Task D4_C_ManualPaid_PendingOrder_CancelsOrder()
     {
         await SeedRetainerOrder(
             Guid.NewGuid(), "order_d4_0003", PaymentStatus.Pending);
 
-        var (_, _, _, orderPaidAtBefore) =
+        var (_, invPaidAtBefore, _, orderPaidAtBefore) =
             await GetPaidAtStateAsync();
+        Assert.Null(invPaidAtBefore);
         Assert.Null(orderPaidAtBefore);
 
         Assert.Equal(
@@ -555,9 +598,13 @@ public class PaymentConsistencyTests : IntegrationTestBase
             await GetPaidAtStateAsync();
 
         Assert.Equal(RetainerInvoiceStatus.Paid, invStatus);
-        Assert.Equal(PaymentStatus.Paid, orderStatus!.Value);
+        Assert.Equal(PaymentStatus.Cancelled, orderStatus!.Value);
         Assert.NotNull(invPaidAt);
-        Assert.Equal(invPaidAt, orderPaidAt);
+
+        // No gateway payment backs the order, so it never gains a PaidAt;
+        // it is retired by the same call that settled the invoice.
+        Assert.Null(orderPaidAt);
+        Assert.Equal(invPaidAt, (await GetOrderAsync()).CancelledAt);
     }
 
     // ------------------------------------------------------------------
@@ -565,27 +612,23 @@ public class PaymentConsistencyTests : IntegrationTestBase
     // ------------------------------------------------------------------
 
     /// <summary>
-    /// A cancelled payment order is terminal, so manual mark-paid must refuse
-    /// to resurrect it. The handler checks the order status AFTER the order
-    /// row lock is held, so a cancelled order can never be flipped back to
-    /// Paid and the invoice is left untouched for a fresh payment attempt.
+    /// Review item C2: a cancelled order is history, not a block. Manual
+    /// mark-paid settles the invoice and leaves the cancelled order exactly as
+    /// it was - it is never resurrected to Paid, because no gateway payment
+    /// backs it.
     /// </summary>
-    /// <remarks>
-    /// This inverts the previous expectation, which asserted the handler's
-    /// former unconditional Paid assignment revived a cancelled order. That
-    /// behaviour left a local settlement with no gateway payment backing it
-    /// and no RazorpayPaymentId to evidence it.
-    /// </remarks>
     [Fact(DisplayName =
-        "D4-D: manual mark-paid with a cancelled order is 409 and settles nothing")]
-    public async Task D4_D_ManualPaid_CancelledOrder_Is409_PaysNothing()
+        "D4-D: manual mark-paid with a cancelled order settles the invoice and leaves the order cancelled")]
+    public async Task D4_D_ManualPaid_CancelledOrder_SettlesInvoiceOnly()
     {
+        var cancelledAt = DateTime.UtcNow.AddHours(-1);
+
         await SeedRetainerOrder(
             Guid.NewGuid(),
             "order_d4_0004",
             PaymentStatus.Cancelled,
             paidAt: null,
-            cancelledAt: DateTime.UtcNow.AddHours(-1));
+            cancelledAt: cancelledAt);
 
         var (_, _, orderBefore, orderPaidAtBefore) =
             await GetPaidAtStateAsync();
@@ -594,17 +637,22 @@ public class PaymentConsistencyTests : IntegrationTestBase
 
         var response = await PostMarkPaidAsync();
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var (invStatus, invPaidAt, orderStatus, orderPaidAt) =
             await GetPaidAtStateAsync();
 
-        // Nothing moved: the order stays cancelled and never gains a PaidAt,
-        // and the invoice is not settled behind the caller's back.
-        Assert.Equal(RetainerInvoiceStatus.Pending, invStatus);
+        Assert.Equal(RetainerInvoiceStatus.Paid, invStatus);
+        Assert.NotNull(invPaidAt);
+
+        // The order is untouched: still cancelled, original CancelledAt,
+        // and it never gains a PaidAt.
         Assert.Equal(PaymentStatus.Cancelled, orderStatus!.Value);
-        Assert.Null(invPaidAt);
         Assert.Null(orderPaidAt);
+        Assert.Equal(
+            cancelledAt,
+            (await GetOrderAsync()).CancelledAt!.Value.ToUniversalTime(),
+            TimeSpan.FromMilliseconds(1));
     }
 
     // ------------------------------------------------------------------
@@ -625,7 +673,7 @@ public class PaymentConsistencyTests : IntegrationTestBase
         var (_, invPaidAtAfterFirst, _, orderPaidAtAfterFirst) =
             await GetPaidAtStateAsync();
         Assert.NotNull(invPaidAtAfterFirst);
-        Assert.NotNull(orderPaidAtAfterFirst);
+        Assert.Null(orderPaidAtAfterFirst);
 
         var second = await PostMarkPaidAsync();
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
@@ -634,9 +682,9 @@ public class PaymentConsistencyTests : IntegrationTestBase
             await GetPaidAtStateAsync();
 
         Assert.Equal(RetainerInvoiceStatus.Paid, invStatus);
-        Assert.Equal(PaymentStatus.Paid, orderStatus!.Value);
+        Assert.Equal(PaymentStatus.Cancelled, orderStatus!.Value);
         Assert.Equal(invPaidAtAfterFirst, invPaidAt);
-        Assert.Equal(orderPaidAtAfterFirst, orderPaidAt);
+        Assert.Null(orderPaidAt);
     }
 
     // ------------------------------------------------------------------
@@ -672,8 +720,8 @@ public class PaymentConsistencyTests : IntegrationTestBase
     // ------------------------------------------------------------------
 
     [Fact(DisplayName =
-        "D4-G: manual first settles the pair with one equal PaidAt")]
-    public async Task D4_G_ManualFirst_SettlesBothWithOnePaidAt()
+        "D4-G: manual first settles the invoice and retires the order with the same timestamp")]
+    public async Task D4_G_ManualFirst_SettlesInvoice_RetiresOrder()
     {
         await SeedRetainerOrder(
             Guid.NewGuid(), "order_d4_0007", PaymentStatus.Pending);
@@ -686,9 +734,10 @@ public class PaymentConsistencyTests : IntegrationTestBase
             await GetPaidAtStateAsync();
 
         Assert.Equal(RetainerInvoiceStatus.Paid, invStatus);
-        Assert.Equal(PaymentStatus.Paid, orderStatus!.Value);
+        Assert.Equal(PaymentStatus.Cancelled, orderStatus!.Value);
         Assert.NotNull(invPaidAt);
-        Assert.Equal(invPaidAt, orderPaidAt);
+        Assert.Null(orderPaidAt);
+        Assert.Equal(invPaidAt, (await GetOrderAsync()).CancelledAt);
     }
 
     // ------------------------------------------------------------------
@@ -745,7 +794,7 @@ public class PaymentConsistencyTests : IntegrationTestBase
         var (_, invPaidAtAfterFirst, _, orderPaidAtAfterFirst) =
             await GetPaidAtStateAsync();
         Assert.NotNull(invPaidAtAfterFirst);
-        Assert.NotNull(orderPaidAtAfterFirst);
+        Assert.Null(orderPaidAtAfterFirst);
 
         Assert.Equal(
             HttpStatusCode.Conflict,
@@ -754,9 +803,9 @@ public class PaymentConsistencyTests : IntegrationTestBase
         var (_, invPaidAt, orderStatus, orderPaidAt) =
             await GetPaidAtStateAsync();
 
-        Assert.Equal(PaymentStatus.Paid, orderStatus!.Value);
+        Assert.Equal(PaymentStatus.Cancelled, orderStatus!.Value);
         Assert.Equal(invPaidAtAfterFirst, invPaidAt);
-        Assert.Equal(orderPaidAtAfterFirst, orderPaidAt);
+        Assert.Null(orderPaidAt);
 
         // A refused call must not audit either.
         var (manualAudit, _) = await GetAuditCountsAsync();
@@ -768,8 +817,8 @@ public class PaymentConsistencyTests : IntegrationTestBase
     // ------------------------------------------------------------------
 
     [Fact(DisplayName =
-        "D4-J: a captured webhook after manual mark-paid is a no-op that moves no PaidAt")]
-    public async Task D4_J_WebhookAfterManual_NoOp_PaidAtUnchanged()
+        "D4-J: a captured webhook after manual mark-paid is held for review and moves no invoice PaidAt")]
+    public async Task D4_J_WebhookAfterManual_HeldForReview_InvoicePaidAtUnchanged()
     {
         await SeedRetainerOrder(
             Guid.NewGuid(), "order_d4_0010", PaymentStatus.Pending);
@@ -778,25 +827,24 @@ public class PaymentConsistencyTests : IntegrationTestBase
             HttpStatusCode.OK,
             (await PostMarkPaidAsync()).StatusCode);
 
-        var (_, invPaidAtAfterManual, _, orderPaidAtAfterManual) =
+        var (_, invPaidAtAfterManual, _, _) =
             await GetPaidAtStateAsync();
         Assert.NotNull(invPaidAtAfterManual);
-        Assert.NotNull(orderPaidAtAfterManual);
 
         var webhook =
             await PostWebhookDirectAsync("order_d4_0010");
         Assert.Equal(HttpStatusCode.OK, webhook.StatusCode);
+        Assert.Equal("RequiresReview", await OutcomeAsync(webhook));
 
-        var body = System.Text.Json.Nodes.JsonNode.Parse(
-            await webhook.Content.ReadAsStringAsync())!;
-        Assert.False((bool)body["data"]!["completed"]!);
-
-        var (_, invPaidAt, orderStatus, orderPaidAt) =
+        var (invStatus, invPaidAt, orderStatus, orderPaidAt) =
             await GetPaidAtStateAsync();
 
-        Assert.Equal(PaymentStatus.Paid, orderStatus!.Value);
+        // The invoice keeps its first settlement; the order records when
+        // the late money was captured.
+        Assert.Equal(RetainerInvoiceStatus.Paid, invStatus);
         Assert.Equal(invPaidAtAfterManual, invPaidAt);
-        Assert.Equal(orderPaidAtAfterManual, orderPaidAt);
+        Assert.Equal(PaymentStatus.PaidRequiresReview, orderStatus!.Value);
+        Assert.NotNull(orderPaidAt);
     }
 
     // ------------------------------------------------------------------
@@ -837,7 +885,7 @@ public class PaymentConsistencyTests : IntegrationTestBase
     // ------------------------------------------------------------------
 
     [Fact(DisplayName =
-        "D4-L: concurrent webhook and manual mark-paid leave one consistent PaidAt on both sides")]
+        "D4-L: concurrent webhook and manual mark-paid settle the invoice once with one stable PaidAt")]
     public async Task D4_L_Concurrent_LeavesOnePaidAt()
     {
         await SeedRetainerOrder(
@@ -860,9 +908,21 @@ public class PaymentConsistencyTests : IntegrationTestBase
             await GetPaidAtStateAsync();
 
         Assert.Equal(RetainerInvoiceStatus.Paid, invStatus);
-        Assert.Equal(PaymentStatus.Paid, orderStatus!.Value);
         Assert.NotNull(invPaidAt);
-        Assert.Equal(invPaidAt, orderPaidAt);
+
+        // The capture is recorded either way.
+        Assert.NotNull(orderPaidAt);
+
+        if (orderStatus!.Value == PaymentStatus.Paid)
+        {
+            // Webhook first: one call settled both with one timestamp.
+            Assert.Equal(invPaidAt, orderPaidAt);
+        }
+        else
+        {
+            // Manual first: the late capture is held for review.
+            Assert.Equal(PaymentStatus.PaidRequiresReview, orderStatus.Value);
+        }
 
         // Replaying both paths changes nothing.
         Assert.Equal(
@@ -870,9 +930,10 @@ public class PaymentConsistencyTests : IntegrationTestBase
             (await PostMarkPaidAsync()).StatusCode);
         await PostWebhookDirectAsync("order_d4_0012");
 
-        var (_, invPaidAtAfter, _, orderPaidAtAfter) =
+        var (_, invPaidAtAfter, orderStatusAfter, orderPaidAtAfter) =
             await GetPaidAtStateAsync();
         Assert.Equal(invPaidAt, invPaidAtAfter);
+        Assert.Equal(orderStatus, orderStatusAfter);
         Assert.Equal(orderPaidAt, orderPaidAtAfter);
     }
 

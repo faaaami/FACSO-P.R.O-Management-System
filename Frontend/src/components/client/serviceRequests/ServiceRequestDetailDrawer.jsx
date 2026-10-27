@@ -199,6 +199,11 @@ function ServiceRequestDetailDrawer({ requestId, onClose, onOpenEmployeeDocument
             <CheckCircle2 size={14} className="shrink-0 mt-0.5" aria-hidden="true" />
             <div>
               <p className="font-semibold">Converted{formatDate(request.convertedAt) ? ` on ${formatDate(request.convertedAt)}` : ''}</p>
+              {request.convertedJobNumber && (
+                <p className="mt-1 font-normal text-[#0B7A5C]">
+                  Now job <span className="font-semibold">{request.convertedJobNumber}</span>. Follow its progress under Jobs.
+                </p>
+              )}
               {request.convertedRenewalTaskId && (
                 <p className="mt-1 font-normal text-[#0B7A5C]">
                   Linked renewal task: <span className="font-mono break-all">{request.convertedRenewalTaskId}</span>

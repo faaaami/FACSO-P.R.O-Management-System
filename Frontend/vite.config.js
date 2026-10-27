@@ -17,6 +17,13 @@ export default defineConfig(({ mode }) => {
           // The ASP.NET Core development certificate is self-signed.
           secure: false,
         },
+        // SignalR notification hub (WebSockets).
+        '/hubs': {
+          target: env.VITE_DEV_API_PROXY_TARGET || 'https://localhost:7280',
+          changeOrigin: true,
+          secure: false,
+          ws: true,
+        },
       },
     },
   }

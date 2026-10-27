@@ -152,15 +152,20 @@ function AdminServiceRequestLifecycleSection({ request }) {
             id="admin-service-request-converted-task-heading"
             className="text-sm font-semibold tracking-tight text-[#16181D]"
           >
-            Resulting renewal task
+            {request.convertedJobNumber ? 'Resulting job' : 'Resulting renewal task'}
           </h3>
 
           <dl className="mt-3">
-            <AdminDetailRow
-              label="Renewal task ID"
-              value={request.convertedRenewalTaskId ?? null}
-              mono
-            />
+            {request.convertedJobNumber && (
+              <AdminDetailRow label="Job" value={request.convertedJobNumber} mono />
+            )}
+            {request.convertedRenewalTaskId && (
+              <AdminDetailRow
+                label="Renewal task ID"
+                value={request.convertedRenewalTaskId}
+                mono
+              />
+            )}
           </dl>
 
           <p className="mt-2.5 text-xs leading-relaxed text-[#6B7280]">

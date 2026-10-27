@@ -4,6 +4,9 @@ import { useCreateClientServiceRequest } from '../../../hooks/client/useCreateCl
 import { useClientEmployees } from '../../../hooks/client/useClientEmployees'
 import { useClientEntities } from '../../../hooks/client/useClientEntities'
 import { SERVICE_REQUEST_TYPES } from '../enumLabels'
+import { useQuery } from '@tanstack/react-query'
+import { listPublicServices } from '../../../api/serviceCatalogue'
+import { CATEGORY_LABELS } from '../../serviceJobs/labels'
 
 const PAGE_SIZE = 100
 
@@ -67,6 +70,23 @@ function ServiceRequestCreatePanel() {
 
   const mutation = useCreateClientServiceRequest()
 
+  // Catalogue services the client can ask for. "svc:<id>" values carry the
+  // chosen service; the legacy EarlyRenewal type is kept for visa renewals
+  // that should attach the current visa automatically.
+  const catalogueQuery = useQuery({
+    queryKey: ['public-services'],
+    queryFn: () => listPublicServices(),
+    staleTime: 5 * 60_000,
+  })
+  const catalogue = catalogueQuery.data ?? []
+  const selectedService = type.startsWith('svc:') ? catalogue.find((s) => `svc:${s.id}` === type) : null
+  const catalogueGroups = Object.entries(
+    catalogue.reduce((groups, service) => {
+      ;(groups[service.category] ??= []).push(service)
+      return groups
+    }, {})
+  )
+
   const employees = employeesData?.items ?? []
   const entities = entitiesData?.items ?? []
 
@@ -89,9 +109,15 @@ function ServiceRequestCreatePanel() {
     event.preventDefault()
     if (!canSubmit) return
 
+    const serviceDefinitionId = selectedService?.id
+    const requestType = selectedService
+      ? (selectedService.category === 'Visa' && !selectedService.code.includes('RENEW') ? 'NewVisa' : 'Other')
+      : type
+
     mutation.mutate(
       {
-        type,
+        type: requestType,
+        serviceDefinitionId,
         employeeId: subjectKind === 'employee' ? employeeId || undefined : undefined,
         entityId: subjectKind === 'entity' ? entityId || undefined : undefined,
         notes: notes.trim() || undefined,
@@ -144,8 +170,12 @@ function ServiceRequestCreatePanel() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Field
-          label="Service Type"
-          hint="Early renewal attaches the employee or entity's active visa automatically, so the request can be turned into a renewal task"
+          label="Service"
+          hint={selectedService
+            ? (selectedService.requiredDocuments.length
+                ? `Please have ready: ${selectedService.requiredDocuments.join('; ')}.`
+                : selectedService.description ?? undefined)
+            : "Early visa renewal attaches the employee or entity's active visa automatically."}
         >
           <select
             className={inputClasses}
@@ -153,11 +183,18 @@ function ServiceRequestCreatePanel() {
             onChange={(e) => setType(e.target.value)}
             disabled={mutation.isPending}
           >
-            <option value="">Select a service type</option>
+            <option value="">Select a service</option>
             {SUPPORTED_SERVICE_TYPES.map((key) => (
               <option key={key} value={key}>
-                {SERVICE_REQUEST_TYPES[key]}
+                {SERVICE_REQUEST_TYPES[key]} (visa, automatic)
               </option>
+            ))}
+            {catalogueGroups.map(([category, services]) => (
+              <optgroup key={category} label={CATEGORY_LABELS[category] ?? category}>
+                {services.map((service) => (
+                  <option key={service.id} value={`svc:${service.id}`}>{service.name}</option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </Field>

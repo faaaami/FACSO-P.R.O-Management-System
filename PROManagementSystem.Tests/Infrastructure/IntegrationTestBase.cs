@@ -77,12 +77,17 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         var db = await CreateScopeDbContextAsync();
 
         const string tables =
+            "\"service_job_activities\", \"service_job_documents\", " +
+            "\"service_job_steps\", \"service_jobs\", " +
+            "\"contract_service_prices\", \"service_step_templates\", " +
+            "\"service_required_documents\", \"service_definitions\", " +
             "\"renewal_task_histories\", \"renewal_step_logs\", " +
             "\"renewal_tasks\", \"service_requests\", " +
             "\"document_dependencies\", \"document_extractions\", " +
             "\"document_versions\", \"notifications\", \"documents\", " +
             "\"retainer_invoices\", \"service_fee_invoices\", " +
             "\"gov_fee_disbursements\", \"payment_orders\", " +
+            "\"webhook_events\", " +
             "\"employees\", \"client_entities\", \"client_companies\", " +
             "\"service_contracts\", \"audit_logs\", " +
             "\"users\"";

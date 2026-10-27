@@ -16,10 +16,10 @@ namespace PROManagementSystem.Tests.Billing;
 ///
 /// The handler is deliberately the most intricate write in the billing area:
 /// it opens a transaction, resolves the related PaymentOrder, takes a
-/// FOR UPDATE lock on the order row first and then on the invoice row (in that
-/// order, to match the webhook handler and avoid deadlocks), re-checks the
-/// status AFTER the locks, writes the invoice, the order and one audit row,
-/// then commits.
+/// FOR UPDATE lock on the invoice's OPEN order first and then on the invoice row
+/// (in that order, to match the webhook handler and avoid deadlocks), re-checks
+/// the status AFTER the locks, settles the invoice, cancels the open order (the
+/// money arrived outside the gateway), writes the audit rows, then commits.
 ///
 /// Each test below targets a specific branch: the happy path, each rejection,
 /// the order-synchronisation behaviour, the row-lock serialisation, and the
@@ -443,12 +443,12 @@ public class ServiceFeeInvoicePaidTests : IntegrationTestBase
     }
 
     // ==================================================================
-    // 6. A pending order is settled with the invoice
+    // 6. A pending order is retired with the invoice
     // ==================================================================
 
     [Fact(DisplayName =
-        "D3-6.6: marking paid also settles the invoice's pending payment order")]
-    public async Task PendingOrder_IsSettledWithTheInvoice()
+        "D3-6.6: marking paid cancels the invoice's pending payment order")]
+    public async Task PendingOrder_IsCancelledWithTheInvoice()
     {
         var invoiceId = await SeedInvoiceAsync();
         var order = await SeedOrderAsync(
@@ -457,14 +457,16 @@ public class ServiceFeeInvoicePaidTests : IntegrationTestBase
         var response = await MarkPaidAsync(invoiceId);
         AssertStatus(response, HttpStatusCode.OK, "mark-paid");
 
-        var settled = await ReadOrderForInvoiceAsync(invoiceId);
+        var retired = await ReadOrderForInvoiceAsync(invoiceId);
 
-        Assert.NotNull(settled);
-        Assert.Equal(order.Id, settled!.Id);
-        Assert.Equal(PaymentStatus.Paid, settled.Status);
-        Assert.NotNull(settled.PaidAt);
+        // Review item C2: the money arrived outside the gateway, so the open
+        // checkout is cancelled - never marked Paid without a gateway payment.
+        Assert.NotNull(retired);
+        Assert.Equal(order.Id, retired!.Id);
+        Assert.Equal(PaymentStatus.Cancelled, retired.Status);
+        Assert.NotNull(retired.CancelledAt);
+        Assert.Null(retired.PaidAt);
 
-        // The invoice agrees with its order.
         Assert.Equal(
             ServiceFeeInvoiceStatus.Paid,
             (await ReadInvoiceAsync(invoiceId)).Status);
@@ -580,12 +582,13 @@ public class ServiceFeeInvoicePaidTests : IntegrationTestBase
 
     /// <summary>
     /// The webhook handler locks the order and then the invoice in the same
-    /// order this handler does, so the two must not deadlock and must not both
-    /// write. Whichever arrives first settles the pair; the other observes a
-    /// non-Pending invoice and backs off.
+    /// order this handler does, so the two must not deadlock. Whichever
+    /// arrives first settles the invoice. If the webhook is second, the
+    /// capture is recorded on the cancelled order for review (review item H1);
+    /// if the manual call is second, it is refused.
     /// </summary>
     [Fact(DisplayName =
-        "D3-6.9: a manual mark-paid racing a captured webhook leaves the invoice and its order consistently paid")]
+        "D3-6.9: a manual mark-paid racing a captured webhook settles the invoice once and never loses the payment")]
     public async Task ManualMarkPaid_RacingTheWebhook_IsConsistent()
     {
         var invoiceId = await SeedInvoiceAsync();
@@ -599,9 +602,8 @@ public class ServiceFeeInvoicePaidTests : IntegrationTestBase
 
         var responses = await Task.WhenAll(manual, webhook);
 
-        // The manual call either wins the race or is refused because the
-        // webhook already settled the invoice. A deadlock would surface here
-        // as an unexpected status, so assert the permitted pair only.
+        // A deadlock would surface here as an unexpected status, so assert
+        // the permitted pair only.
         Assert.Contains(
             responses,
             r => r.StatusCode == HttpStatusCode.OK);
@@ -615,23 +617,28 @@ public class ServiceFeeInvoicePaidTests : IntegrationTestBase
                 $"{(int)response.StatusCode} from the race.");
         }
 
-        // Either way the end state is the same and internally consistent.
         var invoice = await ReadInvoiceAsync(invoiceId);
         Assert.Equal(
             ServiceFeeInvoiceStatus.Paid, invoice.Status);
         Assert.NotNull(invoice.PaidAt);
+        var invoicePaidAt = invoice.PaidAt;
 
+        // Webhook first: the order settled the invoice. Manual first: the
+        // order was cancelled and the capture is held for review. Either
+        // way the captured money is recorded on the order.
         var order = await ReadOrderForInvoiceAsync(invoiceId);
         Assert.NotNull(order);
-        Assert.Equal(PaymentStatus.Paid, order!.Status);
+        Assert.Contains(
+            order!.Status,
+            new[] { PaymentStatus.Paid, PaymentStatus.PaidRequiresReview });
         Assert.NotNull(order.PaidAt);
+        Assert.NotNull(order.RazorpayPaymentId);
 
         // At most one manual settlement audit, whichever order won.
         Assert.True(
             await PaidAuditCountAsync(invoiceId) <= 1);
 
-        // And the pair is settled once and stays settled: replaying both
-        // paths is a clean no-op.
+        // Replaying both paths is a clean no-op.
         AssertStatus(
             await MarkPaidAsync(invoiceId),
             HttpStatusCode.Conflict,
@@ -642,9 +649,12 @@ public class ServiceFeeInvoicePaidTests : IntegrationTestBase
             HttpStatusCode.OK,
             "replay webhook");
 
+        var after = await ReadInvoiceAsync(invoiceId);
+        Assert.Equal(ServiceFeeInvoiceStatus.Paid, after.Status);
+        Assert.Equal(invoicePaidAt, after.PaidAt);
         Assert.Equal(
-            ServiceFeeInvoiceStatus.Paid,
-            (await ReadInvoiceAsync(invoiceId)).Status);
+            order.Status,
+            (await ReadOrderForInvoiceAsync(invoiceId))!.Status);
     }
 
     // ==================================================================
@@ -652,32 +662,25 @@ public class ServiceFeeInvoicePaidTests : IntegrationTestBase
     // ==================================================================
 
     /// <summary>
-    /// A cancelled payment order is terminal, so manual mark-paid must refuse
-    /// to resurrect it. The handler checks the order status AFTER the order
-    /// row lock is held, so nothing is settled and the invoice is left pending
-    /// for a fresh payment attempt.
+    /// Review item C2: a cancelled order is history, not a block. Manual
+    /// mark-paid settles the invoice and leaves the cancelled order exactly
+    /// as it was - never resurrected to Paid, because no gateway payment
+    /// backs it.
     /// </summary>
-    /// <remarks>
-    /// This inverts the previous expectation, which asserted the handler's
-    /// former unconditional Paid assignment revived a cancelled order and
-    /// stamped a first PaidAt on it.
-    /// </remarks>
     [Fact(DisplayName =
-        "D4-6.11: settling a pending invoice whose order was cancelled is 409 and settles nothing")]
-    public async Task CancelledOrder_RefusesToSettle()
+        "D4-6.11: settling a pending invoice whose order was cancelled succeeds and leaves the order cancelled")]
+    public async Task CancelledOrder_DoesNotBlockSettlement()
     {
         var invoiceId = await SeedInvoiceAsync();
         var order = await SeedOrderAsync(
             invoiceId, PaymentStatus.Cancelled, "order_markpaid_11");
 
         // A cancelled order has never been paid, so it has no PaidAt.
-        var orderPaidAtBefore = (await ReadOrderForInvoiceAsync(
-            invoiceId))!.PaidAt;
-        Assert.Null(orderPaidAtBefore);
+        Assert.Null((await ReadOrderForInvoiceAsync(invoiceId))!.PaidAt);
 
         var response = await MarkPaidAsync(invoiceId);
 
-        AssertStatus(response, HttpStatusCode.Conflict, "mark-paid");
+        AssertStatus(response, HttpStatusCode.OK, "mark-paid");
 
         var untouched = await ReadOrderForInvoiceAsync(invoiceId);
 
@@ -688,10 +691,10 @@ public class ServiceFeeInvoicePaidTests : IntegrationTestBase
 
         var invoice = await ReadInvoiceAsync(invoiceId);
         Assert.Equal(
-            ServiceFeeInvoiceStatus.Pending, invoice.Status);
-        Assert.Null(invoice.PaidAt);
+            ServiceFeeInvoiceStatus.Paid, invoice.Status);
+        Assert.NotNull(invoice.PaidAt);
 
-        Assert.Equal(0, await PaidAuditCountAsync(invoiceId));
+        Assert.Equal(1, await PaidAuditCountAsync(invoiceId));
     }
 
     // ==================================================================

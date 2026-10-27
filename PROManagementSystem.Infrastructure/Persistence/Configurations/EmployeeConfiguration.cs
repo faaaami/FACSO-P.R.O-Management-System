@@ -45,6 +45,55 @@ public sealed class EmployeeConfiguration
             .HasColumnName("hire_date")
             .IsRequired();
 
+        builder.Property(x => x.PersonType)
+            .HasColumnName("person_type")
+            .HasDefaultValue(PROManagementSystem.Domain.Enums.PersonType.Employee)
+            .IsRequired();
+
+        builder.Property(x => x.FullNameArabic)
+            .HasColumnName("full_name_arabic")
+            .HasMaxLength(200);
+
+        builder.Property(x => x.Gender)
+            .HasColumnName("gender")
+            .HasMaxLength(1);
+
+        builder.Property(x => x.Mobile)
+            .HasColumnName("mobile")
+            .HasMaxLength(30);
+
+        builder.Property(x => x.Email)
+            .HasColumnName("email")
+            .HasMaxLength(320);
+
+        builder.Property(x => x.EmiratesIdNumber)
+            .HasColumnName("emirates_id_number")
+            .HasMaxLength(20);
+
+        builder.Property(x => x.UidNumber)
+            .HasColumnName("uid_number")
+            .HasMaxLength(30);
+
+        builder.Property(x => x.MohrePersonCode)
+            .HasColumnName("mohre_person_code")
+            .HasMaxLength(30);
+
+        builder.Property(x => x.SponsorId)
+            .HasColumnName("sponsor_id");
+
+        builder.Property(x => x.RelationshipToSponsor)
+            .HasColumnName("relationship_to_sponsor")
+            .HasMaxLength(50);
+
+        builder.HasOne(x => x.Sponsor)
+            .WithMany()
+            .HasForeignKey(x => x.SponsorId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(x => x.EmiratesIdNumber);
+        builder.HasIndex(x => x.PassportNumber);
+        builder.HasIndex(x => x.SponsorId);
+
         builder.Property(x => x.IsActive)
             .HasColumnName("is_active")
             .HasDefaultValue(true);

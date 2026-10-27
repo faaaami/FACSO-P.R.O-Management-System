@@ -257,17 +257,38 @@ function PaymentCounts({ clientCompanyId }) {
     pageSize: 1,
   })
 
+  // Captured money the webhook could not apply (invoice already settled or
+  // voided, amount mismatch). Each one needs a refund or an allocation.
+  const review = useAdminPaymentOrders({
+    clientCompanyId,
+    status: 'PaidRequiresReview',
+    page: 1,
+    pageSize: 1,
+  })
+
   return (
-    <div className="sm:col-span-3">
-      <CountTile
-        label="Total payment orders"
-        totalCount={totalCount}
-        isLoading={isLoading}
-        isError={isError}
-        onRetry={refresh}
-        noun="payment orders"
-      />
-    </div>
+    <>
+      <div className="sm:col-span-2">
+        <CountTile
+          label="Total payment orders"
+          totalCount={totalCount}
+          isLoading={isLoading}
+          isError={isError}
+          onRetry={refresh}
+          noun="payment orders"
+        />
+      </div>
+      <div>
+        <CountTile
+          label="Payments needing review"
+          totalCount={review.totalCount}
+          isLoading={review.isLoading}
+          isError={review.isError}
+          onRetry={review.refresh}
+          noun="payment orders"
+        />
+      </div>
+    </>
   )
 }
 

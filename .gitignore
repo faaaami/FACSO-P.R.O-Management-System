@@ -82,3 +82,10 @@ samples/
 !.vscode/launch.json
 
 signalr-test/node_modules/
+
+# Local deployment secrets
+/.env
+backups/
+
+# JetBrains Rider
+.idea/

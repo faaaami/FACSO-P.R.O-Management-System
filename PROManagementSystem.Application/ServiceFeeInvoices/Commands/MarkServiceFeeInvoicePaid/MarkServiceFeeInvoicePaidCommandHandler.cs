@@ -2,7 +2,9 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Exceptions;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Notifications;
 using PROManagementSystem.Domain.Entities;
+using PROManagementSystem.Application.PaymentOrders;
 using PROManagementSystem.Domain.Enums;
 
 namespace PROManagementSystem.Application.ServiceFeeInvoices.Commands.MarkServiceFeeInvoicePaid;
@@ -14,13 +16,16 @@ public sealed class MarkServiceFeeInvoicePaidCommandHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly IUserNotifier _notifier;
 
     public MarkServiceFeeInvoicePaidCommandHandler(
         IApplicationDbContext context,
-        ICurrentUserService currentUser)
+        ICurrentUserService currentUser,
+        IUserNotifier notifier)
     {
         _context = context;
         _currentUser = currentUser;
+        _notifier = notifier;
     }
 
     public async Task<MarkServiceFeeInvoicePaidResponseDto> Handle(
@@ -46,31 +51,20 @@ public sealed class MarkServiceFeeInvoicePaidCommandHandler
                     "Service fee invoice was not found.");
             }
 
-            // 2. Find the related PaymentOrder (if one exists). There is at
-            //    most one per invoice because ServiceFeeInvoiceId is unique.
-            var relatedOrder =
-                await _context.PaymentOrders
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(
-                        x =>
-                            x.ServiceFeeInvoiceId == request.Id &&
-                            !x.IsDeleted,
-                        cancellationToken);
+            // 2. Lock the invoice's open payment order, if any (at most one,
+            //    enforced by a filtered unique index). Orders are locked
+            //    before the invoice, the same order as the webhook handler,
+            //    to avoid deadlocks. Closed orders (Cancelled, Failed, Paid,
+            //    ...) are history and never block a manual settlement.
+            var openOrders =
+                await OpenPaymentOrders.LockOpenOrdersAsync(
+                    _context,
+                    PaymentInvoiceType.ServiceFeeInvoice,
+                    request.Id,
+                    excludeOrderId: null,
+                    cancellationToken);
 
-            // 3. Lock the PaymentOrder row first (same order as the webhook
-            //    handler) to avoid deadlocks.
-            if (relatedOrder is not null)
-            {
-                var lockedOrders =
-                    await _context.PaymentOrders
-                        .FromSqlInterpolated(
-                            $"SELECT * FROM payment_orders WHERE \"Id\" = {relatedOrder.Id} AND \"IsDeleted\" = false FOR UPDATE")
-                        .ToListAsync(cancellationToken);
-
-                relatedOrder = lockedOrders.SingleOrDefault();
-            }
-
-            // 4. Lock the invoice row.  This serialises concurrent manual
+            // 3. Lock the invoice row.  This serialises concurrent manual
             //    mark-paid calls for the same invoice (even when there is no
             //    PaymentOrder to lock).  Because no prior read tracked this
             //    entity, the FOR UPDATE result is the fresh DB state.
@@ -88,7 +82,7 @@ public sealed class MarkServiceFeeInvoicePaidCommandHandler
                     "Service fee invoice was not found.");
             }
 
-            // 5. Re-check after locks.  A concurrent webhook or manual call
+            // 4. Re-check after locks.  A concurrent webhook or manual call
             //    may have completed while we waited for the row lock.
             if (invoice.Status !=
                 ServiceFeeInvoiceStatus.Pending)
@@ -99,34 +93,27 @@ public sealed class MarkServiceFeeInvoicePaidCommandHandler
 
             var now = DateTime.UtcNow;
 
-            // 6. Mark the invoice Paid.
+            // 5. Mark the invoice Paid.
             invoice.Status =
                 ServiceFeeInvoiceStatus.Paid;
             invoice.PaidAt = now;
             invoice.UpdatedAt = now;
 
-            // 7. Mark the related PaymentOrder Paid (if one exists) so the
-            //    webhook sees a consistent Paid+Paid state and treats the
-            //    duplicate delivery as an idempotent no-op.
-            if (relatedOrder is not null)
+            // 6. The money arrived outside the gateway, so an open checkout
+            //    must not stay payable: cancel it in the same transaction
+            //    (Razorpay cannot close a gateway order). If the client pays
+            //    it anyway, the webhook records it as PaidRequiresReview.
+            foreach (var openOrder in openOrders)
             {
-                EnsureOrderCanBeSettledManually(relatedOrder);
-
-                relatedOrder.Status = PaymentStatus.Paid;
-
-                // PaidAt records when the order was FIRST settled and is
-                // immutable from then on.  A pre-existing value means this
-                // order was already paid, so keep the original settlement
-                // timestamp instead of overwriting it.
-                if (relatedOrder.PaidAt is null)
-                {
-                    relatedOrder.PaidAt = now;
-                }
-
-                relatedOrder.UpdatedAt = now;
+                OpenPaymentOrders.CancelForSettlement(
+                    _context,
+                    openOrder,
+                    _currentUser.UserId,
+                    $"service fee invoice '{invoice.InvoiceNumber}' was marked as paid manually",
+                    now);
             }
 
-            // 8. Audit log.
+            // 7. Audit log.
             _context.AuditLogs.Add(new AuditLog
             {
                 Id = Guid.NewGuid(),
@@ -141,6 +128,16 @@ public sealed class MarkServiceFeeInvoicePaidCommandHandler
                 IsDeleted = false,
                 DeletedAt = null
             });
+
+            // 8. Tell the client the invoice is settled. Saved with the
+            //    settlement below and pushed only after the commit.
+            await _notifier.NotifyClientContactsAsync(
+                invoice.ClientCompanyId,
+                "Invoice paid",
+                $"Invoice {invoice.InvoiceNumber} " +
+                $"({NotificationLabels.Money(invoice.Amount, invoice.Currency)}) " +
+                "is marked as paid. Thank you.",
+                cancellationToken);
 
             // 9. Single atomic commit.
             await _context.SaveChangesAsync(
@@ -170,37 +167,6 @@ public sealed class MarkServiceFeeInvoicePaidCommandHandler
             await transaction.RollbackAsync(
                 cancellationToken);
             throw;
-        }
-    }
-
-    /// <summary>
-    /// Refuses manual settlement of a cancelled payment order.
-    /// </summary>
-    /// <remarks>
-    /// A cancelled order is terminal by definition: both
-    /// <c>CancelPaymentOrderCommandHandler</c> and
-    /// <c>CreatePaymentOrderCommandHandler</c> treat <c>Cancelled</c> as
-    /// final and never resume or repurpose it. Flipping it back to
-    /// <c>Paid</c> would therefore resurrect an order whose gateway order has
-    /// already been closed, producing a local settlement that no gateway
-    /// payment backs and for which there is no <c>RazorpayPaymentId</c> to
-    /// evidence it.
-    /// <para>
-    /// This runs AFTER the order row lock is held, so the status it reads is
-    /// the authoritative one and cannot change underneath the decision. A
-    /// webhook settling the order first makes this a 409 too, because the
-    /// invoice itself is no longer pending.
-    /// </para>
-    /// </remarks>
-    private static void EnsureOrderCanBeSettledManually(
-        PaymentOrder relatedOrder)
-    {
-        if (relatedOrder.Status == PaymentStatus.Cancelled)
-        {
-            throw new ConflictException(
-                "This payment order was cancelled and can no longer be " +
-                "marked as paid. Settle the service fee invoice with a new " +
-                "payment instead.");
         }
     }
 }

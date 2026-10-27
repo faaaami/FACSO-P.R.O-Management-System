@@ -186,9 +186,17 @@ public sealed class RetainerInvoiceReadRepository
                 ON cc.id = ri.{SqlColumnNames.RetainerInvoiceClientCompanyId}
             INNER JOIN service_contracts sc
                 ON sc.{SqlColumnNames.ServiceContractId} = ri.{SqlColumnNames.RetainerInvoiceServiceContractId}
-            LEFT JOIN payment_orders po
-                ON po.{SqlColumnNames.PaymentOrderRetainerInvoiceId} = ri.{SqlColumnNames.RetainerInvoiceId}
-                AND po.{SqlColumnNames.PaymentOrderIsDeleted} = false
+            -- An invoice can have many payment orders (cancelled, failed,
+            -- paid); the detail shows the most recent one.
+            LEFT JOIN LATERAL (
+                SELECT *
+                FROM payment_orders lpo
+                WHERE lpo.{SqlColumnNames.PaymentOrderRetainerInvoiceId} = ri.{SqlColumnNames.RetainerInvoiceId}
+                  AND lpo.{SqlColumnNames.PaymentOrderIsDeleted} = false
+                ORDER BY lpo.{SqlColumnNames.PaymentOrderCreatedAt} DESC,
+                         lpo.{SqlColumnNames.PaymentOrderId} DESC
+                LIMIT 1
+            ) po ON true
             WHERE {whereClause};
             """;
 

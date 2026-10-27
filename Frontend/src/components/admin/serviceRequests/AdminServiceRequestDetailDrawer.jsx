@@ -12,6 +12,7 @@ import AdminServiceRequestSubjectSection from './AdminServiceRequestSubjectSecti
 import AdminServiceRequestLifecycleSection from './AdminServiceRequestLifecycleSection'
 import AdminServiceRequestActivitySection from './AdminServiceRequestActivitySection'
 import AdminServiceRequestDecisionDialog from './AdminServiceRequestDecisionDialog'
+import ConvertRequestToJobDialog from '../../serviceJobs/ConvertRequestToJobDialog'
 import {
   serviceRequestStatusText,
   serviceRequestStatusTone,
@@ -282,9 +283,12 @@ function AdminServiceRequestDetailDrawer({ requestId, onClose }) {
         {isDecidable && (
           <div className="shrink-0 border-t border-[#E2E4E9] bg-[#F7F8FA] px-5 py-4 sm:px-6">
             <p className="text-xs leading-relaxed text-[#6B7280]">
-              {hasLinkedDocument
-                ? 'Convert this request into a renewal task, or reject it with a reason. Both are permanent — the request cannot be reopened, converted twice, or un-rejected afterwards.'
-                : 'This request can be rejected with a reason. It cannot be converted: no document is linked to it, and a renewal task can only be created from one.'}
+              {request?.serviceName
+                ? `The client asked for: ${request.serviceName}. `
+                : ''}
+              Convert this request into a job for any service, into a renewal task
+              {hasLinkedDocument ? '' : ' (needs a linked document)'}, or reject it with a reason.
+              Decisions are permanent.
             </p>
 
             <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -312,12 +316,25 @@ function AdminServiceRequestDetailDrawer({ requestId, onClose }) {
                 <ArrowRightCircle size={15} strokeWidth={1.75} aria-hidden="true" />
                 Convert to renewal task
               </button>
+
+              <button
+                type="button"
+                onClick={() => setDecisionMode('job')}
+                className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-[10px] bg-[#1C1F26] px-4 py-2.5 text-sm font-semibold text-white transition duration-150 hover:bg-[#101319] focus:outline-none focus:ring-2 focus:ring-[#0F9D74] focus:ring-offset-2"
+              >
+                <ArrowRightCircle size={15} strokeWidth={1.75} aria-hidden="true" />
+                Convert to job
+              </button>
             </div>
           </div>
         )}
       </aside>
 
-      {decisionMode && request && (
+      {decisionMode === 'job' && request && (
+        <ConvertRequestToJobDialog request={request} onClose={() => setDecisionMode(null)} />
+      )}
+
+      {decisionMode && decisionMode !== 'job' && request && (
         <AdminServiceRequestDecisionDialog
           mode={decisionMode}
           request={request}

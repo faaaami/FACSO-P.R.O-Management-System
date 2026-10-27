@@ -22,23 +22,58 @@ public sealed class DatabaseFixture : IAsyncLifetime
     public const string TestJwtIssuer = "PROManagementSystem";
     public const string TestJwtAudience = "PROManagementSystem.Client";
 
-    public PostgreSqlContainer Container { get; private set; } = null!;
+    /// <summary>
+    /// Optional: a PostgreSQL server connection string (without a database
+    /// name requirement) to use instead of a Docker Testcontainer, e.g. in CI
+    /// or on machines without Docker. A fresh, uniquely named database is
+    /// created on that server for the run and dropped afterwards.
+    /// </summary>
+    public const string ExternalServerVariable = "PROMS_TEST_DATABASE";
+
+    public PostgreSqlContainer? Container { get; private set; }
 
     public WebApplicationFactory<Program> Factory { get; private set; } = null!;
 
+    /// <summary>Connection string of the database the suite runs against.</summary>
+    public string ConnectionString => _connectionString;
+
     private string _connectionString = string.Empty;
+    private string? _externalServer;
+    private string? _externalDatabase;
 
     public async Task InitializeAsync()
     {
-        Container = new PostgreSqlBuilder("postgres:16-alpine")
-            .WithDatabase("promanagement_test")
-            .WithUsername("postgres")
-            .WithPassword("test-password")
-            .Build();
+        _externalServer =
+            Environment.GetEnvironmentVariable(ExternalServerVariable);
 
-        await Container.StartAsync();
+        if (!string.IsNullOrWhiteSpace(_externalServer))
+        {
+            _externalDatabase = $"proms_test_{Guid.NewGuid():N}";
 
-        _connectionString = Container.GetConnectionString();
+            await using (var admin = new NpgsqlConnection(_externalServer))
+            {
+                await admin.OpenAsync();
+                await using var create = admin.CreateCommand();
+                create.CommandText = $"CREATE DATABASE \"{_externalDatabase}\"";
+                await create.ExecuteNonQueryAsync();
+            }
+
+            _connectionString = new NpgsqlConnectionStringBuilder(
+                _externalServer)
+            { Database = _externalDatabase }.ConnectionString;
+        }
+        else
+        {
+            Container = new PostgreSqlBuilder("postgres:16-alpine")
+                .WithDatabase("promanagement_test")
+                .WithUsername("postgres")
+                .WithPassword("test-password")
+                .Build();
+
+            await Container.StartAsync();
+
+            _connectionString = Container.GetConnectionString();
+        }
 
         Factory = new TestApplicationFactory(_connectionString);
 
@@ -59,6 +94,17 @@ public sealed class DatabaseFixture : IAsyncLifetime
         if (Container is not null)
         {
             await Container.DisposeAsync();
+        }
+
+        if (_externalServer is not null && _externalDatabase is not null)
+        {
+            NpgsqlConnection.ClearAllPools();
+            await using var admin = new NpgsqlConnection(_externalServer);
+            await admin.OpenAsync();
+            await using var drop = admin.CreateCommand();
+            drop.CommandText =
+                $"DROP DATABASE IF EXISTS \"{_externalDatabase}\" WITH (FORCE)";
+            await drop.ExecuteNonQueryAsync();
         }
     }
 }

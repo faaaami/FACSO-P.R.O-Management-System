@@ -38,5 +38,14 @@ public sealed class PaymentOrder : BaseEntity
 
     public DateTime? CancelledAt { get; set; }
 
+    /// <summary>Amount the gateway actually captured, in major units.</summary>
+    public decimal? CapturedAmount { get; set; }
+
+    /// <summary>Currency the gateway actually captured.</summary>
+    public string? CapturedCurrency { get; set; }
+
+    /// <summary>Why a captured payment needs review (PaidRequiresReview).</summary>
+    public string? ReviewReason { get; set; }
+
     public string? Notes { get; set; }
 }

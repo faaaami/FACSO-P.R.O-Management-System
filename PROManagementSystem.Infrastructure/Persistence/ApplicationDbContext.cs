@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Common.Models;
 using PROManagementSystem.Domain;
 using PROManagementSystem.Domain.Entities;
 
@@ -73,6 +74,25 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<PaymentOrder> PaymentOrders =>
         Set<PaymentOrder>();
 
+    public DbSet<WebhookEvent> WebhookEvents => Set<WebhookEvent>();
+
+    public DbSet<ServiceDefinition> ServiceDefinitions => Set<ServiceDefinition>();
+
+    public DbSet<ServiceStepTemplate> ServiceStepTemplates => Set<ServiceStepTemplate>();
+
+    public DbSet<ServiceRequiredDocument> ServiceRequiredDocuments => Set<ServiceRequiredDocument>();
+
+    public DbSet<ContractServicePrice> ContractServicePrices => Set<ContractServicePrice>();
+
+    public DbSet<ServiceJob> ServiceJobs => Set<ServiceJob>();
+
+    public DbSet<ServiceJobStep> ServiceJobSteps => Set<ServiceJobStep>();
+
+    public DbSet<ServiceJobDocument> ServiceJobDocuments => Set<ServiceJobDocument>();
+
+    public DbSet<ServiceJobActivity> ServiceJobActivities => Set<ServiceJobActivity>();
+
+
 
 
 
@@ -81,6 +101,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.HasSequence<long>(SequenceNames.ServiceJobNumber);
+        modelBuilder.HasSequence<long>(SequenceNames.CustomerCode);
 
         modelBuilder.ApplyConfigurationsFromAssembly(
             typeof(ApplicationDbContext).Assembly);
@@ -116,6 +139,20 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         CancellationToken cancellationToken = default)
     {
         return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<long> NextSequenceValueAsync(
+        string sequenceName,
+        CancellationToken cancellationToken = default)
+    {
+        if (sequenceName is not (SequenceNames.ServiceJobNumber or SequenceNames.CustomerCode))
+        {
+            throw new ArgumentException("Unknown sequence.", nameof(sequenceName));
+        }
+
+        return await Database
+            .SqlQueryRaw<long>($"SELECT nextval('\"{sequenceName}\"') AS \"Value\"")
+            .SingleAsync(cancellationToken);
     }
 
     public async Task<IDbContextTransaction> BeginTransactionAsync(

@@ -91,7 +91,10 @@ public sealed class PaymentOrderReadRepository
                 po.{SqlColumnNames.PaymentOrderCancelledAt} AS CancelledAt,
                 po.{SqlColumnNames.PaymentOrderNotes} AS Notes,
                 po.{SqlColumnNames.PaymentOrderCreatedAt} AS CreatedAt,
-                po.{SqlColumnNames.PaymentOrderUpdatedAt} AS UpdatedAt
+                po.{SqlColumnNames.PaymentOrderUpdatedAt} AS UpdatedAt,
+                po.{SqlColumnNames.PaymentOrderCapturedAmount} AS CapturedAmount,
+                po.{SqlColumnNames.PaymentOrderCapturedCurrency} AS CapturedCurrency,
+                po.{SqlColumnNames.PaymentOrderReviewReason} AS ReviewReason
             FROM payment_orders po
             INNER JOIN client_companies cc
                 ON cc.id = po.{SqlColumnNames.PaymentOrderClientCompanyId}
@@ -138,7 +141,10 @@ public sealed class PaymentOrderReadRepository
                 po.{SqlColumnNames.PaymentOrderCancelledAt} AS CancelledAt,
                 po.{SqlColumnNames.PaymentOrderNotes} AS Notes,
                 po.{SqlColumnNames.PaymentOrderCreatedAt} AS CreatedAt,
-                po.{SqlColumnNames.PaymentOrderUpdatedAt} AS UpdatedAt
+                po.{SqlColumnNames.PaymentOrderUpdatedAt} AS UpdatedAt,
+                po.{SqlColumnNames.PaymentOrderCapturedAmount} AS CapturedAmount,
+                po.{SqlColumnNames.PaymentOrderCapturedCurrency} AS CapturedCurrency,
+                po.{SqlColumnNames.PaymentOrderReviewReason} AS ReviewReason
             FROM payment_orders po
             INNER JOIN client_companies cc
                 ON cc.id = po.{SqlColumnNames.PaymentOrderClientCompanyId}

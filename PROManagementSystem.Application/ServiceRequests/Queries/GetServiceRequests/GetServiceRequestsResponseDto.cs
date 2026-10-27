@@ -22,5 +22,9 @@ public sealed record ServiceRequestListItemDto(
     DateTime? ConvertedAt,
     DateTime? RejectedAt,
     Guid? ConvertedRenewalTaskId,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    Guid? ServiceDefinitionId,
+    string? ServiceName,
+    Guid? ConvertedServiceJobId,
+    string? ConvertedJobNumber
 );

@@ -38,4 +38,13 @@ public sealed class ServiceRequest : BaseEntity
     public Guid? ConvertedRenewalTaskId { get; set; }
 
     public RenewalTask? ConvertedRenewalTask { get; set; }
+
+    /// <summary>Catalogue service the client asked for, when chosen.</summary>
+    public Guid? ServiceDefinitionId { get; set; }
+
+    public ServiceDefinition? ServiceDefinition { get; set; }
+
+    public Guid? ConvertedServiceJobId { get; set; }
+
+    public ServiceJob? ConvertedServiceJob { get; set; }
 }

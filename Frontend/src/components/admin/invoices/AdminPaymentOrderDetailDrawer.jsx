@@ -249,6 +249,36 @@ function AdminPaymentOrderDetailDrawer({ paymentOrderId, onClose }) {
           </dl>
         </section>
 
+        {payment.reviewReason ? (
+          <section
+            aria-labelledby="admin-payment-order-review-heading"
+            className="rounded-[12px] border border-red-200 bg-red-50 p-4"
+          >
+            <h3
+              id="admin-payment-order-review-heading"
+              className="text-sm font-semibold tracking-tight text-[#DC2626]"
+            >
+              Payment needs review
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-[#16181D]">
+              {payment.reviewReason}
+            </p>
+            {payment.capturedAmount != null && (
+              <p className="mt-1.5 text-xs text-[#6B7280]">
+                Captured by the gateway:{' '}
+                <span className="tabular-nums">
+                  {Number(payment.capturedAmount).toFixed(2)}
+                </span>{' '}
+                {payment.capturedCurrency ?? ''}
+              </p>
+            )}
+            <p className="mt-1.5 text-xs text-[#6B7280]">
+              The invoice was not changed. Refund this payment at the gateway or
+              allocate it to another invoice.
+            </p>
+          </section>
+        ) : null}
+
         <section
           aria-labelledby="admin-payment-order-gateway-heading"
           className="rounded-[12px] border border-[#E2E4E9] bg-white p-4 shadow-[0_1px_3px_rgba(28,31,38,0.06)]"
@@ -514,7 +544,7 @@ function AdminPaymentOrderDetailDrawer({ paymentOrderId, onClose }) {
         CANCEL CONFIRMATION.
 
         The message is assembled from the shared constant rather than written here, so
-        the words that describe this irreversible, gateway-closing change live in one
+        the words that describe this irreversible change live in one
         place and cannot drift from the copy the invoices drawers show for their own
         irreversible actions.
 

@@ -3,11 +3,15 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
+import { useNotificationRealtime } from '../../hooks/useNotificationRealtime'
 
 const DRAWER_ID = 'mobile-nav-drawer'
 
 function AppShell() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+
+  // Live notifications for every signed-in page.
+  useNotificationRealtime()
 
   const closeMobileMenu = useCallback(() => {
     setIsMobileMenuOpen(false)

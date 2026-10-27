@@ -51,6 +51,16 @@ public sealed class ServiceRequestConfiguration
             .HasForeignKey(x => x.ConvertedRenewalTaskId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.HasOne(x => x.ServiceDefinition)
+            .WithMany()
+            .HasForeignKey(x => x.ServiceDefinitionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.ConvertedServiceJob)
+            .WithMany()
+            .HasForeignKey(x => x.ConvertedServiceJobId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasIndex(x => x.ClientCompanyId);
 
         builder.HasIndex(x => x.EmployeeId);

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using PROManagementSystem.Api.Common;
 using PROManagementSystem.Application.Notifications.Commands.MarkAllNotificationsAsRead;
 using PROManagementSystem.Application.Notifications.Commands.MarkNotificationAsRead;
+using PROManagementSystem.Application.Notifications.Queries.GetNotificationUnreadCount;
 using PROManagementSystem.Application.Notifications.Queries.GetNotifications;
 
 namespace PROManagementSystem.Api.Controllers.Agent;
@@ -40,6 +41,26 @@ public sealed class AgentNotificationsController : ControllerBase
         return Ok(
             ApiResponse<GetNotificationsResponseDto>
                 .SuccessResponse(result));
+    }
+
+    // ================================================================
+    // GET /api/v1/agent/notifications/unread-count
+    // ================================================================
+
+    [HttpGet("unread-count")]
+    [ProducesResponseType(typeof(ApiResponse<int>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetUnreadCount(
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetNotificationUnreadCountQuery(),
+            cancellationToken);
+
+        return Ok(
+            ApiResponse<int>.SuccessResponse(result));
     }
 
     // ================================================================

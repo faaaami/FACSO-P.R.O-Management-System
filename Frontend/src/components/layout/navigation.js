@@ -11,6 +11,9 @@ import {
   Bell,
   History,
   Settings,
+  Briefcase,
+  Store,
+  BookOpen,
 } from 'lucide-react'
 
 /**
@@ -26,11 +29,14 @@ export const ADMIN_NAVIGATION = [
   // Admin's home is /admin (ROLE_HOME.Admin), so point at it directly instead of
   // relying on "/" -> HomeRedirect, otherwise the item never shows as active.
   { name: 'Dashboard', path: '/admin', icon: LayoutDashboard, exact: true },
+  { name: 'Counter', path: '/counter', icon: Store },
+  { name: 'Jobs', path: '/service-jobs', icon: Briefcase },
   { name: 'Clients', path: '/clients', icon: Building2 },
   { name: 'Employees', path: '/employees', icon: Users },
   { name: 'Documents', path: '/documents', icon: FileText },
   { name: 'Renewal Tasks', path: '/renewal-tasks', icon: RefreshCw },
   { name: 'Service Requests', path: '/service-requests', icon: ClipboardList },
+  { name: 'Services', path: '/services', icon: BookOpen },
   { name: 'Invoices', path: '/invoices', icon: Receipt },
   { name: 'Staff', path: '/staff', icon: UserCheck },
   { name: 'Notifications', path: '/notifications', icon: Bell },
@@ -40,6 +46,7 @@ export const ADMIN_NAVIGATION = [
 
 export const AGENT_NAVIGATION = [
   { name: 'Dashboard', path: '/agent', icon: LayoutDashboard, exact: true },
+  { name: 'My Jobs', path: '/service-jobs', icon: Briefcase },
   { name: 'Clients', path: '/clients', icon: Building2 },
   { name: 'Employees', path: '/employees', icon: Users },
   { name: 'Documents', path: '/documents', icon: FileText },
@@ -50,6 +57,7 @@ export const AGENT_NAVIGATION = [
 
 export const CLIENT_NAVIGATION = [
   { name: 'Dashboard', path: '/client', icon: LayoutDashboard, exact: true },
+  { name: 'Jobs', path: '/service-jobs', icon: Briefcase },
   { name: 'Contracts', path: '/contracts', icon: FileSignature },
   { name: 'Documents', path: '/documents', icon: FileText },
   { name: 'Service Requests', path: '/service-requests', icon: ClipboardList },

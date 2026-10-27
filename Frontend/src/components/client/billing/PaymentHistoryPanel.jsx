@@ -14,6 +14,7 @@ function paymentTone(status) {
   if (status === 3) return 'success' // Paid
   if (status === 4) return 'danger' // Failed
   if (status === 6) return 'warning' // Refunded
+  if (status === 7) return 'warning' // PaidRequiresReview
   return 'neutral' // Created / Pending / Cancelled
 }
 

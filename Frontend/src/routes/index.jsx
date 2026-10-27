@@ -37,6 +37,11 @@ import AdminStaffPage from '../pages/admin/AdminStaffPage'
 import AdminInvoicesPage from '../pages/admin/AdminInvoicesPage'
 import AdminAuditLogPage from '../pages/admin/AdminAuditLogPage'
 import AdminSettingsPage from '../pages/admin/AdminSettingsPage'
+import AdminServiceJobsPage from '../pages/admin/AdminServiceJobsPage'
+import AdminServiceCataloguePage from '../pages/admin/AdminServiceCataloguePage'
+import AdminCounterPage from '../pages/admin/AdminCounterPage'
+import AgentServiceJobsPage from '../pages/agent/AgentServiceJobsPage'
+import ClientServiceJobsPage from '../pages/client/ClientServiceJobsPage'
 
 const ROLE_HOME = { Client: '/client', Agent: '/agent', Admin: '/admin' }
 
@@ -199,6 +204,36 @@ function StaffRoute() {
   return <Navigate to="/" replace />
 }
 
+function ServiceJobsRoute() {
+  const { user } = useAuth()
+  if (user?.role === 'Client') {
+    return <ClientServiceJobsPage />
+  }
+  if (user?.role === 'Agent') {
+    return <AgentServiceJobsPage />
+  }
+  if (user?.role === 'Admin') {
+    return <AdminServiceJobsPage />
+  }
+  return <Navigate to="/" replace />
+}
+
+function ServicesRoute() {
+  const { user } = useAuth()
+  if (user?.role === 'Admin') {
+    return <AdminServiceCataloguePage />
+  }
+  return <Navigate to="/" replace />
+}
+
+function CounterRoute() {
+  const { user } = useAuth()
+  if (user?.role === 'Admin') {
+    return <AdminCounterPage />
+  }
+  return <Navigate to="/" replace />
+}
+
 function AuditLogRoute() {
   const { user } = useAuth()
   if (user?.role === 'Admin') {
@@ -248,6 +283,9 @@ function AppRoutes() {
           <Route path="/documents" element={<DocumentsRoute />} />
           <Route path="/renewal-tasks" element={<RenewalTasksRoute />} />
           <Route path="/service-requests" element={<ServiceRequestsRoute />} />
+          <Route path="/service-jobs" element={<ServiceJobsRoute />} />
+          <Route path="/services" element={<ServicesRoute />} />
+          <Route path="/counter" element={<CounterRoute />} />
           <Route path="/invoices" element={<InvoicesRoute />} />
           <Route path="/staff" element={<StaffRoute />} />
           <Route path="/notifications" element={<NotificationsRoute />} />

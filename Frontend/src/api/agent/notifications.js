@@ -13,6 +13,15 @@ export async function getAgentNotifications(params = {}) {
 }
 
 /**
+ * The Agent's own unread notification count.
+ * GET /api/v1/agent/notifications/unread-count — returns a number.
+ */
+export async function getAgentUnreadNotificationCount() {
+  const response = await apiClient.get('/agent/notifications/unread-count')
+  return response.data.data
+}
+
+/**
  * Marks a single Agent notification as read.
  * PATCH /api/v1/agent/notifications/{notificationId}/read
  */

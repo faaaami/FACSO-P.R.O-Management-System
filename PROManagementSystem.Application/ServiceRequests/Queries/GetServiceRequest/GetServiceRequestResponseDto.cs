@@ -16,5 +16,9 @@ public sealed record GetServiceRequestResponseDto(
     DateTime? RejectedAt,
     Guid? ConvertedRenewalTaskId,
     DateTime CreatedAt,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    Guid? ServiceDefinitionId,
+    string? ServiceName,
+    Guid? ConvertedServiceJobId,
+    string? ConvertedJobNumber
 );

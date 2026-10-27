@@ -493,12 +493,9 @@ export function useCreateAdminPaymentOrder() {
 /**
  * PATCH /api/v1/payment-orders/{id}/cancel — no body.
  *
- * CANCELLING NOW CLOSES THE GATEWAY ORDER. The handler closes the Razorpay
- * order first and only then writes the local status, and if the gateway close
- * fails the whole operation is refused (a 5xx surfaces the provider's refusal
- * via extractApiErrorMessage) with the local order left untouched and still
- * payable. So a successful cancel means the money cannot be taken on this order
- * any more, and the toast may say so plainly.
+ * Cancelling is local only: Razorpay cannot close a gateway order, so the toast
+ * must not claim the client can no longer pay it. A later capture on the
+ * cancelled order settles a still-pending invoice or is flagged for review.
  */
 export function useCancelAdminPaymentOrder() {
   const queryClient = useQueryClient()
@@ -524,7 +521,7 @@ export function useCancelAdminPaymentOrder() {
       ])
 
       toast.success(
-        'Payment order cancelled and closed with the payment provider. It can no longer be paid.',
+        'Payment order cancelled. If the client still completes this checkout, the payment is flagged for review.',
       )
     },
     onError: (error) => {

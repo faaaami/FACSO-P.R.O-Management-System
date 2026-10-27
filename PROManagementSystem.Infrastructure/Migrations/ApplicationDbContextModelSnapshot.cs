@@ -22,6 +22,10 @@ namespace PROManagementSystem.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.HasSequence("customer_code_seq");
+
+            modelBuilder.HasSequence("service_job_number_seq");
+
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.AuditLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -108,9 +112,25 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("company_name");
 
+                    b.Property<string>("ContactPersonName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("contact_person_name");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
+
+                    b.Property<string>("CustomerCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("customer_code");
+
+                    b.Property<int>("CustomerType")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("customer_type");
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
@@ -134,10 +154,20 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
 
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("notes");
+
                     b.Property<string>("Phone")
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("phone");
+
+                    b.Property<string>("TaxRegistrationNumber")
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)")
+                        .HasColumnName("tax_registration_number");
 
                     b.Property<string>("TradeLicenseNumber")
                         .HasMaxLength(100)
@@ -149,6 +179,12 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasColumnName("updated_at");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CustomerCode")
+                        .IsUnique()
+                        .HasFilter("customer_code IS NOT NULL");
+
+                    b.HasIndex("CustomerType");
 
                     b.ToTable("client_companies", (string)null);
                 });
@@ -206,6 +242,48 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.HasIndex("TradeLicenseNumber");
 
                     b.ToTable("client_entities", (string)null);
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ContractServicePrice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IncludedInRetainer")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("ServiceContractId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ServiceDefinitionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("ServiceFee")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceDefinitionId");
+
+                    b.HasIndex("ServiceContractId", "ServiceDefinitionId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("contract_service_prices", (string)null);
                 });
 
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.Document", b =>
@@ -575,11 +653,31 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<string>("Email")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("email");
+
+                    b.Property<string>("EmiratesIdNumber")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("emirates_id_number");
+
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("full_name");
+
+                    b.Property<string>("FullNameArabic")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("full_name_arabic");
+
+                    b.Property<string>("Gender")
+                        .HasMaxLength(1)
+                        .HasColumnType("character varying(1)")
+                        .HasColumnName("gender");
 
                     b.Property<DateTime>("HireDate")
                         .HasColumnType("timestamp with time zone")
@@ -602,6 +700,16 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasColumnType("character varying(150)")
                         .HasColumnName("job_title");
 
+                    b.Property<string>("Mobile")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("mobile");
+
+                    b.Property<string>("MohrePersonCode")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("mohre_person_code");
+
                     b.Property<string>("Nationality")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -612,6 +720,26 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("passport_number");
 
+                    b.Property<int>("PersonType")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("person_type");
+
+                    b.Property<string>("RelationshipToSponsor")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("relationship_to_sponsor");
+
+                    b.Property<Guid?>("SponsorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sponsor_id");
+
+                    b.Property<string>("UidNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("uid_number");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -620,9 +748,15 @@ namespace PROManagementSystem.Infrastructure.Migrations
 
                     b.HasIndex("ClientEntityId");
 
+                    b.HasIndex("EmiratesIdNumber");
+
                     b.HasIndex("IsActive");
 
                     b.HasIndex("IsDeleted");
+
+                    b.HasIndex("PassportNumber");
+
+                    b.HasIndex("SponsorId");
 
                     b.ToTable("employees", (string)null);
                 });
@@ -679,6 +813,9 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Property<Guid?>("RenewalTaskId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ServiceJobId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -690,6 +827,8 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.HasIndex("ClientCompanyId");
 
                     b.HasIndex("RenewalTaskId");
+
+                    b.HasIndex("ServiceJobId");
 
                     b.HasIndex("Status");
 
@@ -802,6 +941,14 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<decimal?>("CapturedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("CapturedCurrency")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
                     b.Property<Guid>("ClientCompanyId")
                         .HasColumnType("uuid");
 
@@ -847,6 +994,10 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Property<Guid?>("RetainerInvoiceId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ReviewReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<Guid?>("ServiceFeeInvoiceId")
                         .HasColumnType("uuid");
 
@@ -864,15 +1015,19 @@ namespace PROManagementSystem.Infrastructure.Migrations
 
                     b.HasIndex("RazorpayOrderId");
 
-                    b.HasIndex("RetainerInvoiceId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
+                    b.HasIndex("RetainerInvoiceId");
 
-                    b.HasIndex("ServiceFeeInvoiceId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
+                    b.HasIndex("ServiceFeeInvoiceId");
 
                     b.HasIndex("Status");
+
+                    b.HasIndex(new[] { "RetainerInvoiceId" }, "IX_payment_orders_RetainerInvoiceId_Open")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false AND \"Status\" IN (1, 2)");
+
+                    b.HasIndex(new[] { "ServiceFeeInvoiceId" }, "IX_payment_orders_ServiceFeeInvoiceId_Open")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false AND \"Status\" IN (1, 2)");
 
                     b.ToTable("payment_orders", (string)null);
                 });
@@ -1166,6 +1321,89 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.ToTable("service_contracts", (string)null);
                 });
 
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceDefinition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Authority")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("Category")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("DefaultServiceFee")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int?>("EstimatedDays")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("EstimatedGovernmentFee")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsCounterService")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("NameArabic")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("RenewsDocumentType")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ServiceFeeVatable")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SubjectType")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("service_definitions", (string)null);
+                });
+
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceFeeInvoice", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1244,6 +1482,270 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.ToTable("service_fee_invoices", (string)null);
                 });
 
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ApplicationNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid?>("AssignedStaffId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ClientCompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ClientEntityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("EmployeeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("EstimatedGovernmentFee")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("JobNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("OnHoldReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ServiceDefinitionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("ServiceFee")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<bool>("ServiceFeeVatable")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("ServiceRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedStaffId");
+
+                    b.HasIndex("ClientCompanyId");
+
+                    b.HasIndex("ClientEntityId");
+
+                    b.HasIndex("DocumentId");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("JobNumber")
+                        .IsUnique();
+
+                    b.HasIndex("ServiceDefinitionId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("service_jobs", (string)null);
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceJobActivity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("FromStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsInternal")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("ServiceJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("ToStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceJobId");
+
+                    b.ToTable("service_job_activities", (string)null);
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceJobDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsMandatory")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsReceived")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ServiceJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceJobId");
+
+                    b.ToTable("service_job_documents", (string)null);
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceJobStep", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CompletedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReferenceNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("ServiceJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceJobId");
+
+                    b.ToTable("service_job_steps", (string)null);
+                });
+
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1257,6 +1759,9 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("ConvertedRenewalTaskId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ConvertedServiceJobId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1288,6 +1793,9 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<Guid?>("ServiceDefinitionId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -1303,11 +1811,15 @@ namespace PROManagementSystem.Infrastructure.Migrations
 
                     b.HasIndex("ConvertedRenewalTaskId");
 
+                    b.HasIndex("ConvertedServiceJobId");
+
                     b.HasIndex("DocumentId");
 
                     b.HasIndex("EmployeeId");
 
                     b.HasIndex("EntityId");
+
+                    b.HasIndex("ServiceDefinitionId");
 
                     b.HasIndex("Status");
 
@@ -1315,6 +1827,85 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("CK_service_requests_subject", "\"EmployeeId\" IS NOT NULL OR \"EntityId\" IS NOT NULL");
                         });
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceRequiredDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsMandatory")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ServiceDefinitionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceDefinitionId");
+
+                    b.ToTable("service_required_documents", (string)null);
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceStepTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ServiceDefinitionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceDefinitionId");
+
+                    b.ToTable("service_step_templates", (string)null);
                 });
 
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.User", b =>
@@ -1416,6 +2007,57 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.WebhookEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("RazorpayOrderId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RazorpayPaymentId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RazorpayOrderId");
+
+                    b.HasIndex(new[] { "EventId" }, "IX_webhook_events_EventId")
+                        .IsUnique();
+
+                    b.ToTable("webhook_events", (string)null);
+                });
+
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.ClientEntity", b =>
                 {
                     b.HasOne("PROManagementSystem.Domain.Entities.ClientCompany", "ClientCompany")
@@ -1425,6 +2067,25 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("ClientCompany");
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ContractServicePrice", b =>
+                {
+                    b.HasOne("PROManagementSystem.Domain.Entities.ServiceContract", "ServiceContract")
+                        .WithMany()
+                        .HasForeignKey("ServiceContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PROManagementSystem.Domain.Entities.ServiceDefinition", "ServiceDefinition")
+                        .WithMany()
+                        .HasForeignKey("ServiceDefinitionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ServiceContract");
+
+                    b.Navigation("ServiceDefinition");
                 });
 
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.Document", b =>
@@ -1503,7 +2164,14 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("PROManagementSystem.Domain.Entities.Employee", "Sponsor")
+                        .WithMany()
+                        .HasForeignKey("SponsorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("ClientEntity");
+
+                    b.Navigation("Sponsor");
                 });
 
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.GovFeeDisbursement", b =>
@@ -1519,9 +2187,16 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasForeignKey("RenewalTaskId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("PROManagementSystem.Domain.Entities.ServiceJob", "ServiceJob")
+                        .WithMany()
+                        .HasForeignKey("ServiceJobId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("ClientCompany");
 
                     b.Navigation("RenewalTask");
+
+                    b.Navigation("ServiceJob");
                 });
 
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.Notification", b =>
@@ -1684,6 +2359,86 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Navigation("RenewalTask");
                 });
 
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceJob", b =>
+                {
+                    b.HasOne("PROManagementSystem.Domain.Entities.User", "AssignedStaff")
+                        .WithMany()
+                        .HasForeignKey("AssignedStaffId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("PROManagementSystem.Domain.Entities.ClientCompany", "ClientCompany")
+                        .WithMany()
+                        .HasForeignKey("ClientCompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PROManagementSystem.Domain.Entities.ClientEntity", "ClientEntity")
+                        .WithMany()
+                        .HasForeignKey("ClientEntityId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PROManagementSystem.Domain.Entities.Document", "Document")
+                        .WithMany()
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PROManagementSystem.Domain.Entities.Employee", "Employee")
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PROManagementSystem.Domain.Entities.ServiceDefinition", "ServiceDefinition")
+                        .WithMany()
+                        .HasForeignKey("ServiceDefinitionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AssignedStaff");
+
+                    b.Navigation("ClientCompany");
+
+                    b.Navigation("ClientEntity");
+
+                    b.Navigation("Document");
+
+                    b.Navigation("Employee");
+
+                    b.Navigation("ServiceDefinition");
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceJobActivity", b =>
+                {
+                    b.HasOne("PROManagementSystem.Domain.Entities.ServiceJob", "ServiceJob")
+                        .WithMany("Activities")
+                        .HasForeignKey("ServiceJobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ServiceJob");
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceJobDocument", b =>
+                {
+                    b.HasOne("PROManagementSystem.Domain.Entities.ServiceJob", "ServiceJob")
+                        .WithMany("Documents")
+                        .HasForeignKey("ServiceJobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ServiceJob");
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceJobStep", b =>
+                {
+                    b.HasOne("PROManagementSystem.Domain.Entities.ServiceJob", "ServiceJob")
+                        .WithMany("Steps")
+                        .HasForeignKey("ServiceJobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ServiceJob");
+                });
+
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceRequest", b =>
                 {
                     b.HasOne("PROManagementSystem.Domain.Entities.ClientCompany", "ClientCompany")
@@ -1695,6 +2450,11 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.HasOne("PROManagementSystem.Domain.Entities.RenewalTask", "ConvertedRenewalTask")
                         .WithMany()
                         .HasForeignKey("ConvertedRenewalTaskId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("PROManagementSystem.Domain.Entities.ServiceJob", "ConvertedServiceJob")
+                        .WithMany()
+                        .HasForeignKey("ConvertedServiceJobId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("PROManagementSystem.Domain.Entities.Document", "Document")
@@ -1712,15 +2472,46 @@ namespace PROManagementSystem.Infrastructure.Migrations
                         .HasForeignKey("EntityId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("PROManagementSystem.Domain.Entities.ServiceDefinition", "ServiceDefinition")
+                        .WithMany()
+                        .HasForeignKey("ServiceDefinitionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("ClientCompany");
 
                     b.Navigation("ConvertedRenewalTask");
+
+                    b.Navigation("ConvertedServiceJob");
 
                     b.Navigation("Document");
 
                     b.Navigation("Employee");
 
                     b.Navigation("Entity");
+
+                    b.Navigation("ServiceDefinition");
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceRequiredDocument", b =>
+                {
+                    b.HasOne("PROManagementSystem.Domain.Entities.ServiceDefinition", "ServiceDefinition")
+                        .WithMany("RequiredDocuments")
+                        .HasForeignKey("ServiceDefinitionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ServiceDefinition");
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceStepTemplate", b =>
+                {
+                    b.HasOne("PROManagementSystem.Domain.Entities.ServiceDefinition", "ServiceDefinition")
+                        .WithMany("Steps")
+                        .HasForeignKey("ServiceDefinitionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ServiceDefinition");
                 });
 
             modelBuilder.Entity("PROManagementSystem.Domain.Entities.User", b =>
@@ -1762,6 +2553,22 @@ namespace PROManagementSystem.Infrastructure.Migrations
                     b.Navigation("History");
 
                     b.Navigation("StepLogs");
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceDefinition", b =>
+                {
+                    b.Navigation("RequiredDocuments");
+
+                    b.Navigation("Steps");
+                });
+
+            modelBuilder.Entity("PROManagementSystem.Domain.Entities.ServiceJob", b =>
+                {
+                    b.Navigation("Activities");
+
+                    b.Navigation("Documents");
+
+                    b.Navigation("Steps");
                 });
 #pragma warning restore 612, 618
         }

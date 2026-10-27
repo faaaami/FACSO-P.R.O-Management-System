@@ -120,6 +120,9 @@ internal static class SqlColumnNames
     public const string PaymentOrderPaidAt = "\"PaidAt\"";
     public const string PaymentOrderFailedAt = "\"FailedAt\"";
     public const string PaymentOrderCancelledAt = "\"CancelledAt\"";
+    public const string PaymentOrderCapturedAmount = "\"CapturedAmount\"";
+    public const string PaymentOrderCapturedCurrency = "\"CapturedCurrency\"";
+    public const string PaymentOrderReviewReason = "\"ReviewReason\"";
     public const string PaymentOrderNotes = "\"Notes\"";
     public const string PaymentOrderCreatedAt = "\"CreatedAt\"";
     public const string PaymentOrderUpdatedAt = "\"UpdatedAt\"";

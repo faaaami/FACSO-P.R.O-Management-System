@@ -1,0 +1,81 @@
+name: Deploy to Azure
+
+# Builds the API and web images, pushes them to the Azure Container Registry
+# and rolls both Container Apps onto them. Runs after CI succeeds on main, or
+# by hand. One-time Azure setup: deploy/azure/README.md.
+#
+# Repository settings used:
+#   secrets: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#   vars:    AZURE_RESOURCE_GROUP, AZURE_REGISTRY_NAME,
+#            AZURE_API_APP_NAME, AZURE_WEB_APP_NAME
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC login to Azure, no stored password
+  contents: read
+
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      # The commit CI tested, or the dispatched commit.
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to the registry
+        run: az acr login --name "${{ vars.AZURE_REGISTRY_NAME }}"
+
+      - name: Build and push images
+        run: |
+          registry="$(az acr show --name "${{ vars.AZURE_REGISTRY_NAME }}" --query loginServer -o tsv)"
+          echo "API_IMAGE=$registry/fasco-pro-api:$SHA" >> "$GITHUB_ENV"
+          echo "WEB_IMAGE=$registry/fasco-pro-web:$SHA" >> "$GITHUB_ENV"
+
+          docker build -f PROManagementSystem/Dockerfile -t "$registry/fasco-pro-api:$SHA" .
+          docker build -t "$registry/fasco-pro-web:$SHA" Frontend
+
+          docker push "$registry/fasco-pro-api:$SHA"
+          docker push "$registry/fasco-pro-web:$SHA"
+
+      - name: Roll out
+        run: |
+          az extension add --name containerapp --upgrade --only-show-errors
+          rg="${{ vars.AZURE_RESOURCE_GROUP }}"
+
+          if ! az containerapp show -g "$rg" -n "${{ vars.AZURE_API_APP_NAME }}" -o none 2>/dev/null; then
+            echo "::notice::The apps do not exist yet. Images pushed:"
+            echo "::notice::API_IMAGE=$API_IMAGE"
+            echo "::notice::WEB_IMAGE=$WEB_IMAGE"
+            echo "::notice::Run the second Bicep pass with these (deploy/azure/README.md, step 5)."
+            exit 0
+          fi
+
+          # API first: it applies pending migrations on start, and the web
+          # app only proxies to it.
+          az containerapp update -g "$rg" -n "${{ vars.AZURE_API_APP_NAME }}" --image "$API_IMAGE" -o none
+          az containerapp update -g "$rg" -n "${{ vars.AZURE_WEB_APP_NAME }}" --image "$WEB_IMAGE" -o none
+
+          echo "Deployed $SHA"

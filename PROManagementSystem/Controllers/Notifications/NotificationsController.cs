@@ -5,7 +5,7 @@ using PROManagementSystem.Api.Common;
 using PROManagementSystem.Application.Notifications.Queries.GetNotifications;
 using PROManagementSystem.Application.Notifications.Commands.MarkNotificationAsRead;
 using PROManagementSystem.Application.Notifications.Commands.MarkAllNotificationsAsRead;
-
+using PROManagementSystem.Application.Notifications.Queries.GetNotificationUnreadCount;
 
 namespace PROManagementSystem.Api.Controllers.Notifications;
 
@@ -33,6 +33,19 @@ public sealed class NotificationsController : ControllerBase
         return Ok(
             ApiResponse<GetNotificationsResponseDto>.SuccessResponse(
                 result));
+    }
+
+    // Unread count for the signed-in user, whatever their role.
+    [HttpGet("unread-count")]
+    public async Task<IActionResult> GetUnreadCount(
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetNotificationUnreadCountQuery(),
+            cancellationToken);
+
+        return Ok(
+            ApiResponse<int>.SuccessResponse(result));
     }
 
     [HttpPatch("{id:guid}/read")]

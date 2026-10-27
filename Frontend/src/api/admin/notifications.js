@@ -5,9 +5,8 @@ import apiClient from '../axios'
  * same routes the Client and Agent portals use, scoped server-side to the
  * caller's own notifications via the user id claim.
  *
- * APPROVED DECISION Q12: no Admin unread badge. The only unread-count route in
- * the backend is GET /api/v1/client/notifications/unread-count, which is
- * `[Authorize(Roles = "Client")]`, so Admin has no count endpoint to call.
+ * The unread count comes from GET /api/v1/notifications/unread-count, which
+ * counts the signed-in user's own unread notifications whatever their role.
  *
  * Sorting IS supported server-side. `sortBy` is whitelisted in the repository to
  * "title", "isread" and created_at (the default for anything unrecognised);
@@ -28,6 +27,12 @@ import apiClient from '../axios'
  */
 export async function getAdminNotifications(params = {}) {
   const response = await apiClient.get('/notifications', { params })
+  return response.data.data
+}
+
+/** GET /api/v1/notifications/unread-count — returns a number. */
+export async function getAdminUnreadNotificationCount() {
+  const response = await apiClient.get('/notifications/unread-count')
   return response.data.data
 }
 

@@ -10,20 +10,13 @@ using Xunit;
 namespace PROManagementSystem.Tests.Billing;
 
 /// <summary>
-/// P5: payment-order cancellation and invoice voiding must retire the GATEWAY
-/// order, not just the local row.
+/// P5: payment-order cancellation and invoice voiding must retire the order.
 ///
-/// Before this suite, cancelling an order left a live Razorpay order behind a
-/// locally cancelled row, and voiding an invoice never touched its order at
-/// all. In both cases a client could still complete checkout, the gateway
-/// would capture the money, and the webhook would then reject the payment
-/// because the local order/invoice was no longer payable - so the capture was
-/// never recorded anywhere.
-///
-/// These tests pin three things:
-/// the gateway is closed before the local state is written, a gateway close
-/// failure aborts the whole operation and leaves both sides untouched, and
-/// the local write is atomic with the gateway decision.
+/// Razorpay cannot close or cancel a gateway order (its Orders API only
+/// updates <c>notes</c>), so retiring is local only. A client can therefore
+/// still complete checkout on a retired order; these tests pin that such a
+/// payment is never lost: it settles a still-pending invoice, or is recorded
+/// as PaidRequiresReview when the invoice was voided.
 /// </summary>
 [Collection(DatabaseCollection.Name)]
 public class PaymentOrderCancellationTests : IntegrationTestBase
@@ -308,23 +301,18 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
     }
 
     // ==================================================================
-    // Cancel: gateway must be closed
+    // Cancel
     // ==================================================================
 
     [Fact(DisplayName =
-        "P5-C1: cancelling a Pending order closes the Razorpay order")]
-    public async Task Cancel_ClosesGatewayOrder()
+        "P5-C1: cancelling a Pending order cancels it")]
+    public async Task Cancel_CancelsPendingOrder()
     {
         var seeded = await SeedRetainerOrderAsync("order_p5_c1");
 
         var response = await CancelOrderAsync(seeded.Id);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        // The gateway close happened, for exactly this order.
-        Assert.Equal(1, FakeRazorpayService.CloseOrderCallCount);
-        Assert.Equal(
-            "order_p5_c1", FakeRazorpayService.LastClosedOrderId);
 
         var stored = await ReadRetainerOrderAsync();
         Assert.NotNull(stored);
@@ -334,56 +322,34 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "P5-C2: a gateway close failure aborts the cancel and leaves the order open")]
-    public async Task Cancel_AbortsWhenGatewayCloseFails()
+        "P5-C2: a payment completed after cancel still settles the pending invoice")]
+    public async Task Cancel_ThenLateCapture_SettlesPendingInvoice()
     {
+        // The gateway order cannot be closed, so the client can still pay it
+        // after the cancel. The money must not be lost: the invoice is still
+        // pending, so the capture settles it.
         var seeded = await SeedRetainerOrderAsync("order_p5_c2");
 
-        FakeRazorpayService.FailNextCloseOrder();
+        Assert.Equal(
+            HttpStatusCode.OK, (await CancelOrderAsync(seeded.Id)).StatusCode);
 
-        var response = await CancelOrderAsync(seeded.Id);
+        var webhook = await PostWebhookAsync("order_p5_c2");
 
-        // The request must not report success: the order was never cancelled.
-        Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, webhook.StatusCode);
 
-        Assert.Equal(1, FakeRazorpayService.CloseOrderCallCount);
-
-        // The transaction rolled back, so the order is still live and payable.
         var stored = await ReadRetainerOrderAsync();
         Assert.NotNull(stored);
-        Assert.Equal(PaymentStatus.Pending, stored!.Status);
-        Assert.Null(stored.CancelledAt);
-
-        // And the invoice is untouched, so the client can still pay it.
+        Assert.Equal(PaymentStatus.Paid, stored!.Status);
+        Assert.Equal("pay_p5_0001", stored.RazorpayPaymentId);
         Assert.Equal(
-            RetainerInvoiceStatus.Pending, await RetainerStatusAsync());
-        Assert.Equal(0, await CancelAuditCountAsync(seeded.Id));
+            RetainerInvoiceStatus.Paid, await RetainerStatusAsync());
     }
 
     [Fact(DisplayName =
-        "P5-C3: cancelling succeeds when the gateway order is already closed")]
-    public async Task Cancel_SucceedsWhenGatewayAlreadyClosed()
-    {
-        // Models a retry after a lost response: the gateway end state already
-        // holds, so the local cancellation must still be recorded.
-        var seeded = await SeedRetainerOrderAsync("order_p5_c3");
-        FakeRazorpayService.MarkGatewayOrderClosed("order_p5_c3");
-
-        var response = await CancelOrderAsync(seeded.Id);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(1, FakeRazorpayService.CloseOrderCallCount);
-
-        var stored = await ReadRetainerOrderAsync();
-        Assert.Equal(PaymentStatus.Cancelled, stored!.Status);
-    }
-
-    [Fact(DisplayName =
-        "P5-C4: cancelling a Created order with no gateway order makes no gateway call")]
+        "P5-C4: cancelling a Created order with no gateway order succeeds")]
     public async Task Cancel_CreatedOrderWithoutGatewayOrder_SkipsGateway()
     {
-        // A Created order with no gateway id never reached the provider, so
-        // there is nothing to close and no gateway call should be attempted.
+        // A Created order with no gateway id never reached the provider.
         var seeded = await SeedRetainerOrderAsync(
             "order_p5_c4", PaymentStatus.Created);
 
@@ -398,14 +364,13 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
         var response = await CancelOrderAsync(seeded.Id);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(0, FakeRazorpayService.CloseOrderCallCount);
 
         var stored = await ReadRetainerOrderAsync();
         Assert.Equal(PaymentStatus.Cancelled, stored!.Status);
     }
 
     [Fact(DisplayName =
-        "P5-C5: cancelling a Paid order is 409 and never closes the gateway")]
+        "P5-C5: cancelling a Paid order is 409")]
     public async Task Cancel_PaidOrder_Is409()
     {
         var seeded = await SeedRetainerOrderAsync(
@@ -414,7 +379,6 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
         var response = await CancelOrderAsync(seeded.Id);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(0, FakeRazorpayService.CloseOrderCallCount);
 
         var stored = await ReadRetainerOrderAsync();
         Assert.Equal(PaymentStatus.Paid, stored!.Status);
@@ -444,7 +408,6 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
         var response = await CancelOrderAsync(seeded.Id);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(0, FakeRazorpayService.CloseOrderCallCount);
 
         var stored = await ReadRetainerOrderAsync();
         Assert.Equal(PaymentStatus.Pending, stored!.Status);
@@ -490,25 +453,18 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
     }
 
     // ==================================================================
-    // Void: must retire the order AND the gateway
+    // Void: must retire the open order
     // ==================================================================
 
     [Fact(DisplayName =
-        "P5-V1: voiding a retainer invoice cancels its order and closes the gateway")]
-    public async Task VoidRetainer_ClosesGatewayAndCancelsOrder()
+        "P5-V1: voiding a retainer invoice cancels its open order")]
+    public async Task VoidRetainer_CancelsOrder()
     {
         var seeded = await SeedRetainerOrderAsync("order_p5_v1");
 
         var response = await VoidRetainerAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        Assert.Equal(1, FakeRazorpayService.CloseOrderCallCount);
-        Assert.Equal(
-            "order_p5_v1", FakeRazorpayService.LastClosedOrderId);
-
-        // The dangerous pre-P5 state - a live gateway order over a voided
-        // invoice - is exactly what this asserts against.
         var stored = await ReadRetainerOrderAsync();
         Assert.NotNull(stored);
         Assert.Equal(PaymentStatus.Cancelled, stored!.Status);
@@ -521,31 +477,31 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "P5-V2: a gateway close failure aborts the void and leaves invoice and order open")]
-    public async Task VoidRetainer_AbortsWhenGatewayCloseFails()
+        "P5-V2: a payment completed after a retainer void is held for review and the invoice stays void")]
+    public async Task VoidRetainer_ThenLateCapture_HeldForReview()
     {
+        // The gateway order cannot be closed, so the client can still pay it
+        // after the void. The money is recorded on the order for an admin to
+        // refund or allocate; the voided invoice is not resurrected.
         await SeedRetainerOrderAsync("order_p5_v2");
 
-        FakeRazorpayService.FailNextCloseOrder();
-
-        var response = await VoidRetainerAsync();
-
-        Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(1, FakeRazorpayService.CloseOrderCallCount);
-
-        // Both sides rolled back together: no half-voided state, and the
-        // order is still live so the client can still pay it.
         Assert.Equal(
-            RetainerInvoiceStatus.Pending, await RetainerStatusAsync());
+            HttpStatusCode.OK, (await VoidRetainerAsync()).StatusCode);
+
+        var webhook = await PostWebhookAsync("order_p5_v2");
+
+        Assert.Equal(HttpStatusCode.OK, webhook.StatusCode);
 
         var stored = await ReadRetainerOrderAsync();
-        Assert.Equal(PaymentStatus.Pending, stored!.Status);
-        Assert.Null(stored.CancelledAt);
-        Assert.Equal(0, await CancelAuditCountAsync(stored.Id));
+        Assert.NotNull(stored);
+        Assert.Equal(PaymentStatus.PaidRequiresReview, stored!.Status);
+        Assert.Equal("pay_p5_0001", stored.RazorpayPaymentId);
+        Assert.Equal(
+            RetainerInvoiceStatus.Void, await RetainerStatusAsync());
     }
 
     [Fact(DisplayName =
-        "P5-V3: voiding an invoice with no payment order still voids and makes no gateway call")]
+        "P5-V3: voiding an invoice with no payment order still voids")]
     public async Task VoidRetainer_NoOrder_StillVoids()
     {
         // Regression guard: the new order handling must not break the common
@@ -553,13 +509,12 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
         var response = await VoidRetainerAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(0, FakeRazorpayService.CloseOrderCallCount);
         Assert.Equal(
             RetainerInvoiceStatus.Void, await RetainerStatusAsync());
     }
 
     [Fact(DisplayName =
-        "P5-V4: voiding a paid invoice is 409 and never closes the gateway")]
+        "P5-V4: voiding a paid invoice is 409")]
     public async Task VoidRetainer_PaidInvoice_Is409()
     {
         await SeedRetainerOrderAsync("order_p5_v4");
@@ -568,7 +523,6 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
         var response = await VoidRetainerAsync();
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(0, FakeRazorpayService.CloseOrderCallCount);
 
         var stored = await ReadRetainerOrderAsync();
         Assert.Equal(PaymentStatus.Pending, stored!.Status);
@@ -610,7 +564,7 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "P5-V8: void racing mark-paid never leaves a paid order under a voided invoice")]
+        "P5-V8: void racing mark-paid never leaves a live order or a paid order under a voided invoice")]
     public async Task VoidRetainer_RacingMarkPaid_NeverHidesASettlement()
     {
         // Void and mark-paid take the same order row lock in the same order, so
@@ -636,28 +590,31 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
 
         if (invoiceStatus == RetainerInvoiceStatus.Void)
         {
-            // The void won: the order must have been closed and cancelled, so
+            // The void won: the order must have been cancelled, so
             // there is no live gateway order left collecting money.
             Assert.Equal(PaymentStatus.Cancelled, stored!.Status);
             Assert.Null(stored.PaidAt);
         }
         else
         {
-            // Mark-paid won: a void must never overwrite a settlement.
+            // Mark-paid won: a void must never overwrite a settlement. The
+            // money arrived outside the gateway, so the order is cancelled
+            // rather than paid.
             Assert.Equal(RetainerInvoiceStatus.Paid, invoiceStatus);
-            Assert.Equal(PaymentStatus.Paid, stored!.Status);
-            Assert.NotNull(stored.PaidAt);
+            Assert.Equal(PaymentStatus.Cancelled, stored!.Status);
+            Assert.Null(stored.PaidAt);
         }
     }
 
     [Fact(DisplayName =
         "P5-C9: racing create and cancel never leaves two live gateway orders on one invoice")]
-    public async Task Cancel_RacingCreate_LeavesAtMostOneOrder()
+    public async Task Cancel_RacingCreate_LeavesAtMostOneOpenOrder()
     {
-        // The invoice already has a gateway-backed order, so a second create must
-        // be refused. Racing it against the cancel proves the guard is not a
-        // read-then-write that a cancel can slip between: the worst outcome would
-        // be a cancelled order plus a freshly payable one for the same invoice.
+        // If the create runs first it resumes the existing order, which the
+        // cancel then retires. If the cancel runs first, the create raises a
+        // fresh order (review item C2: a cancelled order must not leave the
+        // invoice unpayable). The invariant is that the invoice never has two
+        // OPEN orders at once.
         await SeedRetainerOrderAsync("order_p5_c9");
 
         var orderId = (await ReadRetainerOrderAsync())!.Id;
@@ -682,33 +639,34 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
         // both be satisfied on every run and the test was order-dependent.
         //
         // What the race is actually for is the invariant asserted below, and that
-        // is checked on the stored rows rather than on the HTTP status codes:
-        // exactly one order survives and it is Cancelled with its gateway reference
-        // intact. Whether the losing request answered 409 or the winning create
-        // answered 201 does not change any of that, so the status codes are only
-        // range-checked and the correctness property is asserted where it is
-        // deterministic.
+        // is checked on the stored rows rather than on the HTTP status codes.
 
         var orders = await ReadAllRetainerOrdersAsync();
 
-        Assert.Single(orders);
-        Assert.Equal(PaymentStatus.Cancelled, orders[0].Status);
-        Assert.NotNull(orders[0].RazorpayOrderId);
+        // The original order is retired with its gateway reference intact.
+        var original = Assert.Single(orders, x => x.Id == orderId);
+        Assert.Equal(PaymentStatus.Cancelled, original.Status);
+        Assert.NotNull(original.RazorpayOrderId);
+
+        // At most one other order, and it is the only open one.
+        Assert.True(orders.Count <= 2, $"{orders.Count} orders");
+        Assert.True(
+            orders.Count(x =>
+                x.Status is PaymentStatus.Created or PaymentStatus.Pending) <= 1);
+        Assert.Equal(
+            orders.Count,
+            orders.Select(x => x.RazorpayOrderId).Distinct().Count());
     }
 
     [Fact(DisplayName =
-        "P5-V6: voiding a service fee invoice cancels its order and closes the gateway")]
-    public async Task VoidServiceFee_ClosesGatewayAndCancelsOrder()
+        "P5-V6: voiding a service fee invoice cancels its open order")]
+    public async Task VoidServiceFee_CancelsOrder()
     {
         var seeded = await SeedServiceFeeOrderAsync("order_p5_v6");
 
         var response = await VoidServiceFeeAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        Assert.Equal(1, FakeRazorpayService.CloseOrderCallCount);
-        Assert.Equal(
-            "order_p5_v6", FakeRazorpayService.LastClosedOrderId);
 
         var stored = await ReadServiceFeeOrderAsync();
         Assert.NotNull(stored);
@@ -722,24 +680,27 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "P5-V7: a gateway close failure aborts a service fee void and leaves both sides open")]
-    public async Task VoidServiceFee_AbortsWhenGatewayCloseFails()
+        "P5-V7: a payment completed after a service fee void is held for review and the invoice stays void")]
+    public async Task VoidServiceFee_ThenLateCapture_HeldForReview()
     {
+        // The gateway order cannot be closed, so the client can still pay it
+        // after the void. The money is recorded on the order for an admin to
+        // refund or allocate; the voided invoice is not resurrected.
         await SeedServiceFeeOrderAsync("order_p5_v7");
 
-        FakeRazorpayService.FailNextCloseOrder();
-
-        var response = await VoidServiceFeeAsync();
-
-        Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(1, FakeRazorpayService.CloseOrderCallCount);
-
         Assert.Equal(
-            ServiceFeeInvoiceStatus.Pending, await ServiceFeeStatusAsync());
+            HttpStatusCode.OK, (await VoidServiceFeeAsync()).StatusCode);
+
+        var webhook = await PostWebhookAsync("order_p5_v7");
+
+        Assert.Equal(HttpStatusCode.OK, webhook.StatusCode);
 
         var stored = await ReadServiceFeeOrderAsync();
-        Assert.Equal(PaymentStatus.Pending, stored!.Status);
-        Assert.Null(stored.CancelledAt);
+        Assert.NotNull(stored);
+        Assert.Equal(PaymentStatus.PaidRequiresReview, stored!.Status);
+        Assert.Equal("pay_p5_0001", stored.RazorpayPaymentId);
+        Assert.Equal(
+            ServiceFeeInvoiceStatus.Void, await ServiceFeeStatusAsync());
     }
 
     // ==================================================================
@@ -894,49 +855,12 @@ public class PaymentOrderCancellationTests : IntegrationTestBase
     }
 
     [Fact(DisplayName =
-        "P5-D6: a failed gateway close leaves the order Pending, so the drawer keeps waiting")]
-    public async Task ClientRetainerDetail_FailedCloseStillReportsPendingOrder()
-    {
-        // The confirming state needs to distinguish "still confirming" from
-        // "cancelled, do not wait any longer". A refused close is the first of
-        // those: the payment may yet arrive, so the drawer must not be told the
-        // payment died.
-        await SeedRetainerOrderAsync("order_p5_d6");
-
-        FakeRazorpayService.FailNextCloseOrder();
-
-        Assert.NotEqual(
-            HttpStatusCode.OK,
-            (await CancelOrderAsync(
-                (await ReadRetainerOrderAsync())!.Id)).StatusCode);
-
-        var response = await ScopeClient.SendAsync(ScopeGet(
-            $"/api/v1/client/retainer-invoices/{TestDataSeeder.Ids.RetainerInvoiceA}",
-            TestDataSeeder.Ids.ClientUserA,
-            "Client",
-            TestDataSeeder.Ids.CompanyA.ToString()));
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var json = System.Text.Json.Nodes.JsonNode.Parse(
-            await response.Content.ReadAsStringAsync())!;
-
-        // The close failed, so the order is still live: the drawer must keep
-        // waiting rather than claim the payment died.
-        Assert.Equal(
-            "Pending",
-            json["data"]!["paymentOrderStatus"]!.GetValue<string>());
-    }
-
-    [Fact(DisplayName =
         "P5-D7: the client retainer invoice route reports Cancelled so the drawer stops polling")]
     public async Task ClientRetainerDetail_ReportsCancelledOrder()
     {
-        // The other half of the same decision: once the cancel has actually
-        // succeeded, the order is Cancelled and the drawer must stop waiting and
-        // offer a new payment. This goes through the real cancel path rather than
-        // seeding the status, so it also covers the detail read of a genuine
-        // gateway-closed order.
+        // Once the cancel has succeeded, the order is Cancelled and the drawer
+        // must stop waiting and offer a new payment. This goes through the real
+        // cancel path rather than seeding the status.
         await SeedRetainerOrderAsync("order_p5_d7");
 
         var cancel = await CancelOrderAsync(

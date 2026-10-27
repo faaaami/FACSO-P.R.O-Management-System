@@ -1,6 +1,7 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Notifications;
 using PROManagementSystem.Domain.Entities;
 using PROManagementSystem.Domain.Enums;
 
@@ -13,13 +14,16 @@ public sealed class BlockRenewalTaskCommandHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly IUserNotifier _notifier;
 
     public BlockRenewalTaskCommandHandler(
         IApplicationDbContext context,
-        ICurrentUserService currentUser)
+        ICurrentUserService currentUser,
+        IUserNotifier notifier)
     {
         _context = context;
         _currentUser = currentUser;
+        _notifier = notifier;
     }
 
     public async Task<BlockRenewalTaskResponseDto> Handle(
@@ -124,7 +128,34 @@ public sealed class BlockRenewalTaskCommandHandler
         };
         _context.AuditLogs.Add(auditLog);
 
-        // 7. Save task + history
+        // 7. Tell whoever has to act: an agent's block needs an admin to
+        //    clear it; an admin's block stops the assigned agent's work. The
+        //    notifier saves the task, history, audit and notifications in
+        //    one write.
+        var label = await NotificationLabels.RenewalTaskAsync(
+            _context, task.Id, cancellationToken);
+
+        if (_currentUser.IsAdmin)
+        {
+            if (task.AssignedStaffId.HasValue &&
+                task.AssignedStaffId.Value != currentUserId)
+            {
+                await _notifier.NotifyUsersAsync(
+                    [task.AssignedStaffId.Value],
+                    "Task blocked",
+                    $"An admin blocked {label}: {blockedReason}",
+                    cancellationToken);
+            }
+        }
+        else
+        {
+            await _notifier.NotifyAdminsAsync(
+                "Task blocked",
+                $"{label} was blocked by the assigned agent: {blockedReason}",
+                cancellationToken);
+        }
+
+        // 8. Save task + history
         await _context.SaveChangesAsync(
             cancellationToken);
 

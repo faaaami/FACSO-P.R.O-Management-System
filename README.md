@@ -1,9 +1,11 @@
 # FASCO PRO Management System
 
-PRO services management for FASCO Document Clearing LLC: client companies,
-employees, document registry and expiry tracking, renewal tasks, service
-requests, contracts, invoicing and online payments. Three portals: Admin,
-Agent (PRO staff) and Client.
+PRO services management for FASCO Document Clearing LLC: subscription and
+walk-in customers, a service catalogue (visa, Emirates ID, MOHRE, company,
+typing, attestation), jobs with step-by-step workflows, a walk-in counter,
+document registry and expiry tracking, renewal tasks, service requests,
+contracts, invoicing and online payments. Three portals: Admin, Agent (PRO
+staff) and Client.
 
 | Part | Technology |
 |---|---|
@@ -13,6 +15,56 @@ Agent (PRO staff) and Client.
 | Jobs | Hangfire (PostgreSQL storage) |
 | Email | SMTP (MailKit) |
 | Frontend | React 18 + Vite + Tailwind (`Frontend/`) |
+
+## Customers, services and jobs
+
+**Customers.** Every customer has a type and a counter code (`C-000123`):
+
+| Type | Who | Typical flow |
+|---|---|---|
+| Subscription | Companies on a retainer contract, with portal logins | Requests from the portal, contract prices per service |
+| Walk-in company | Companies served job by job | Registered at the Counter |
+| Walk-in individual | Sponsors, families, visitors | Registered at the Counter; a person record is created for them |
+
+People under a customer (employees, partners, dependents, domestic workers)
+carry passport, Emirates ID, UID and MOHRE person code. Dependents and
+domestic workers link to their sponsor.
+
+**Service catalogue** (Admin → Services). Each service has a category, the
+authority, who it is for (person / company / none), the default service fee
+(before VAT), typical government fees, the documents to collect and the
+standard steps. A service can *renew* a document type: completing such a job
+updates the linked document's expiry. A starter catalogue of 36 common UAE
+services is seeded on first start **with fees set to 0 — set your prices**.
+Subscription pricing per contract (`PUT /api/v1/admin/contracts/{id}/service-prices/{serviceId}`)
+overrides the default fee or marks the service as included in the retainer.
+
+**Jobs** (Admin → Jobs, Agent → My Jobs, Client → Jobs). A job is one service
+for one customer, numbered `JOB-2026-000042`. Lifecycle:
+`New → In progress ⇄ On hold → Completed`, or `Cancelled` (admin only, with
+a reason). Steps and the document checklist are copied from the service when
+the job is created, so editing a service never rewrites existing jobs. A job
+can only be completed when every step is done or skipped. Staff record the
+government application number, step reference numbers, government fees paid
+and notes (internal, or shared with the client, who is notified). Agents see
+only jobs assigned to them; clients see their company's jobs without internal
+notes.
+
+**Counter** (Admin → Counter). Search by name, customer code, mobile,
+passport or Emirates ID, or register a walk-in, then open jobs for them.
+
+**Service requests** from the client portal can name a catalogue service and
+can be converted into a job for any service (`Convert to job`), including new
+visas, which previously could only be rejected.
+
+| API | Purpose |
+|---|---|
+| `GET/POST/PUT /api/v1/admin/services`, `PATCH …/{id}/active` | Catalogue |
+| `GET /api/v1/services` | Active catalogue for any signed-in role (no prices) |
+| `POST /api/v1/admin/customers/walk-in`, `GET …/customers/lookup?q=` | Counter |
+| `GET/PUT /api/v1/admin/customers/{id}/profile`, `…/persons` | Customer type, TRN, people |
+| `/api/v1/admin/service-jobs` (+ `/agent/…`, `/client/…`) | Jobs, per role |
+| `POST /api/v1/admin/service-jobs/from-request/{requestId}` | Convert a request to a job |
 
 ## Configuration
 
@@ -125,6 +177,29 @@ form.
 Real sample documents for local testing go in `samples/` (gitignored, never
 committed); redact anything not needed for the test.
 
+## Deployment (Docker)
+
+`docker-compose.yml` runs PostgreSQL, Redis, the API and the web app (nginx
+serving the SPA and proxying `/api`). Copy `deploy/.env.example` to `.env`,
+fill it in, then `docker compose up -d --build`. The API applies pending
+migrations on start (`Database__MigrateOnStartup=true`) and trusts the proxy's
+`X-Forwarded-*` headers (`ForwardedHeaders__Enabled=true`) so the per-IP login
+rate limit sees real client addresses. Terminate TLS in front of port 8080 and
+schedule `deploy/backup.sh` (database dump + uploaded documents).
+
+**Azure.** [`deploy/azure/README.md`](deploy/azure/README.md) deploys the same
+setup to Azure Container Apps (Bicep template plus a GitHub Actions workflow
+that deploys `main` after CI passes).
+
+**OCR on Linux.** The Linux binaries inside the Tesseract NuGet package need
+OpenSSL 3.2+, which Debian 12 / Ubuntu 24.04 (the .NET images) do not have, so
+OCR silently failed on Linux. The API image installs the distribution's
+Tesseract and links it in with `scripts/link-linux-ocr.sh`; do the same on any
+Linux host or CI runner (`apt install libtesseract5 liblept5`, then run the
+script against the build output). Uploaded images are decoded and re-encoded
+by Magick.NET before they reach the native Leptonica library, so unreadable
+files are rejected in managed code.
+
 ## Running locally
 
 Prerequisites: .NET 10 SDK, Node.js 18+, PostgreSQL (port 5433 by default),
@@ -152,3 +227,12 @@ actual emails, run a local catcher such as Mailpit
 
 `dotnet test` runs unit and integration tests. Integration tests start
 PostgreSQL in Docker through Testcontainers, so Docker must be running.
+Without Docker, point them at any PostgreSQL server instead (a throwaway
+database is created and dropped per run):
+
+```
+PROMS_TEST_DATABASE="Host=localhost;Port=5432;Username=postgres;Password=..." dotnet test
+```
+
+CI (`.github/workflows/ci.yml`) builds and tests the API against a PostgreSQL
+service and lints and builds the frontend.

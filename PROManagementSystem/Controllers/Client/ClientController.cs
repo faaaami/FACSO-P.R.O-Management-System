@@ -582,7 +582,8 @@ public sealed class ClientController : ControllerBase
             request.Type,
             request.EmployeeId,
             request.EntityId,
-            request.Notes);
+            request.Notes,
+            request.ServiceDefinitionId);
 
         var result = await _sender.Send(
             command,

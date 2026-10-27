@@ -20,7 +20,6 @@ import {
   BILLING_ACTION_LABELS,
   BILLING_AUDIT_ENTITY_TYPES,
   IRREVERSIBLE_ACTIONS,
-  MARK_PAID_CANCELLED_ORDER_NOTE,
   MARK_PAID_SIDE_EFFECT_NOTE,
   VOID_REASON_HINT,
   VOID_SIDE_EFFECT_NOTE,
@@ -183,18 +182,10 @@ function AdminInvoiceDetailDrawer({ kind, invoiceId, onClose }) {
   const isActing = markPaidMutation.isPending || voidMutation.isPending
 
   /**
-   * A LINKED ORDER OF `Cancelled` MAKES MARK-PAID INAPPLICABLE, so the button is
-   * withheld rather than disabled — a greyed-out button reads as "not right now"
-   * and invites a retry that can only fail again. Void is still offered: a pending
-   * invoice with a cancelled order is exactly what voiding cleans up.
-   *
-   * Matched on the name and the ordinal both, because `PaymentStatus` is rendered
-   * as a string by the global converter but arrives numeric on any response that
-   * escapes it.
+   * A cancelled or failed payment order no longer blocks mark-paid: the server
+   * settles the invoice and cancels any order that is still open (review C2).
    */
-  const hasCancelledOrder =
-    invoice?.paymentOrderStatus === 'Cancelled' || invoice?.paymentOrderStatus === 5
-  const canMarkPaid = isPendingInvoice && !hasCancelledOrder
+  const canMarkPaid = isPendingInvoice
 
   const markPaidCopy = BILLING_ACTION_CONFIRMS[IRREVERSIBLE_ACTIONS.MARK_PAID]
   const voidCopy = BILLING_ACTION_CONFIRMS[IRREVERSIBLE_ACTIONS.VOID]
@@ -514,20 +505,11 @@ function AdminInvoiceDetailDrawer({ kind, invoiceId, onClose }) {
           </div>
         )}
 
-        {isPendingInvoice && hasCancelledOrder && (
-          <div className="border-t border-[#E2E4E9] p-5 sm:p-6">
-            <div className="rounded-[10px] border border-[#FDE68A] bg-[#FFFBEB] px-4 py-3 text-xs leading-relaxed text-[#92400E]">
-              {MARK_PAID_CANCELLED_ORDER_NOTE}
-            </div>
-          </div>
-        )}
       </aside>
 
       {/*
-        Mark-paid confirmation. The message names the second record it changes,
-        because the handler sets the linked payment order to Paid in the same
-        transaction — a confirmation describing it as a single-record edit would
-        understate what the button does.
+        Mark-paid confirmation. The message names the second record it may change:
+        the handler cancels a still-open payment order in the same transaction.
       */}
       <ConfirmDialog
         open={pendingAction === 'mark-paid'}
@@ -535,8 +517,7 @@ function AdminInvoiceDetailDrawer({ kind, invoiceId, onClose }) {
         message={[
           `Invoice ${presentInvoiceNumber(invoice)}.`,
           markPaidCopy.irreversible,
-  MARK_PAID_SIDE_EFFECT_NOTE,
-  MARK_PAID_CANCELLED_ORDER_NOTE,
+          MARK_PAID_SIDE_EFFECT_NOTE,
         ].join(' ')}
         confirmLabel={markPaidCopy.confirmLabel}
         tone={markPaidCopy.tone}
@@ -549,7 +530,7 @@ function AdminInvoiceDetailDrawer({ kind, invoiceId, onClose }) {
         Void confirmation. The reason is quoted INSIDE the confirmation, so what is
         about to be written is visible at the moment it is agreed to — and the copy
         says plainly that leaving it blank records no reason at all. It also names
-        the gateway close, because voiding is no longer an invoice-only edit.
+        the open payment order it cancels, because voiding is not an invoice-only edit.
       */}
       <ConfirmDialog
         open={pendingAction === 'void-review'}

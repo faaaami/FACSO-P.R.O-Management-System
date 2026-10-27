@@ -62,6 +62,15 @@ public sealed class GovFeeDisbursementConfiguration
             .HasIndex(x => x.RenewalTaskId);
 
         builder
+            .HasOne(x => x.ServiceJob)
+            .WithMany()
+            .HasForeignKey(x => x.ServiceJobId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder
+            .HasIndex(x => x.ServiceJobId);
+
+        builder
             .HasIndex(x => x.Status);
     }
 }

@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Exceptions;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Notifications;
 using PROManagementSystem.Domain.Entities;
 using PROManagementSystem.Domain.Enums;
 
@@ -97,13 +98,16 @@ public sealed class UnblockRenewalTaskCommandHandler
 
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly IUserNotifier _notifier;
 
     public UnblockRenewalTaskCommandHandler(
         IApplicationDbContext context,
-        ICurrentUserService currentUser)
+        ICurrentUserService currentUser,
+        IUserNotifier notifier)
     {
         _context = context;
         _currentUser = currentUser;
+        _notifier = notifier;
     }
 
     public async Task<UnblockRenewalTaskResponseDto> Handle(
@@ -369,11 +373,22 @@ public sealed class UnblockRenewalTaskCommandHandler
         // transaction is introduced: a single SaveChanges is already one unit of
         // work.
         //
-        // There is deliberately no Notification for the assigned Agent and no
-        // SignalR event. The block operation that this mirrors sends neither, so
-        // an unblock that sent one would make the pair asymmetric — the Agent
-        // would learn about a task resuming from a push while the blocking that
-        // paused it arrived silently. Neither is in scope for this workflow.
+        // The assigned Agent is told the task can resume, mirroring the block,
+        // which tells the admins (or the Agent, when an admin blocked it). The
+        // notifier saves everything above together with the notification.
+
+        if (task.AssignedStaffId.HasValue &&
+            task.AssignedStaffId.Value != currentUserId)
+        {
+            var label = await NotificationLabels.RenewalTaskAsync(
+                _context, task.Id, cancellationToken);
+
+            await _notifier.NotifyUsersAsync(
+                [task.AssignedStaffId.Value],
+                "Task unblocked",
+                $"{label} was unblocked and can continue: {unblockReason}",
+                cancellationToken);
+        }
 
         await _context.SaveChangesAsync(
             cancellationToken);

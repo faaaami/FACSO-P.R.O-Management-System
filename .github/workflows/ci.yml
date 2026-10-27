@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DOTNET_NOLOGO: "1"
+      PROMS_TEST_DATABASE: Host=localhost;Port=5432;Username=postgres;Password=ci-password;Database=postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: OCR libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libtesseract5 liblept5
+      - run: dotnet restore PROManagementSystem.slnx
+      - run: dotnet build PROManagementSystem.slnx --no-restore -c Release
+      - name: Link OCR libraries into the test output
+        run: sudo sh scripts/link-linux-ocr.sh PROManagementSystem.Tests/bin/Release/net10.0
+      - run: dotnet test PROManagementSystem.Tests --no-build -c Release --logger trx
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results
+          path: "**/TestResults/*.trx"
+
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

@@ -26,16 +26,13 @@ public sealed class CancelPaymentOrderCommandHandler
 
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
-    private readonly IRazorpayService _razorpayService;
 
     public CancelPaymentOrderCommandHandler(
         IApplicationDbContext context,
-        ICurrentUserService currentUser,
-        IRazorpayService razorpayService)
+        ICurrentUserService currentUser)
     {
         _context = context;
         _currentUser = currentUser;
-        _razorpayService = razorpayService;
     }
 
     public async Task<CancelPaymentOrderResponseDto> Handle(
@@ -101,26 +98,10 @@ public sealed class CancelPaymentOrderCommandHandler
                 paymentOrder,
                 cancellationToken);
 
-            // 5. Close the gateway order BEFORE recording the local
-            //    cancellation. A live Razorpay order over a locally
-            //    cancelled order can still capture a payment, which the
-            //    webhook would then reject because the order is Cancelled -
-            //    the customer's money would be taken and not recorded. If the
-            //    gateway close fails, the whole transaction is rolled back and
-            //    the order stays open and retryable, which is the correct and
-            //    non-destructive outcome.
-            if (paymentOrder.RazorpayOrderId is not null)
-            {
-                // The result is intentionally not branched on: a gateway order
-                // that was already closed (a retry after a lost response) and
-                // one closed by this call both mean the same thing locally, so
-                // the local cancellation is recorded either way.
-                await _razorpayService
-                    .CloseOrderAsync(
-                        paymentOrder.RazorpayOrderId,
-                        cancellationToken);
-            }
-
+            // 5. Cancel locally. Razorpay cannot close a gateway order, so a
+            //    payment the client still completes on it reaches the
+            //    webhook, which settles the invoice if it is still pending or
+            //    records the money as PaidRequiresReview - it is never lost.
             var now = DateTime.UtcNow;
 
             paymentOrder.Status = PaymentStatus.Cancelled;

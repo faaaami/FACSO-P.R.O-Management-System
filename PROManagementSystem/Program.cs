@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using System.Globalization;
 using FluentValidation;
 using Hangfire;
@@ -195,6 +196,14 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IServiceFeeInvoiceCreationService,
     ServiceFeeInvoiceCreationService>();
+
+builder.Services.AddScoped<
+    IUserNotifier,
+    UserNotifier>();
+
+builder.Services.AddScoped<
+    PROManagementSystem.Application.ServiceJobs.IServiceJobFactory,
+    PROManagementSystem.Application.ServiceJobs.ServiceJobFactory>();
 
 builder.Services.AddScoped<
     IGovFeeDisbursementReadRepository,
@@ -584,6 +593,12 @@ builder.Services.AddMediatR(
 builder.Services.AddValidatorsFromAssembly(
     typeof(LoginCommand).Assembly);
 
+// Outermost: realtime pushes queued by a request go out only after the whole
+// request (and its transaction) has completed.
+builder.Services.AddTransient(
+    typeof(IPipelineBehavior<,>),
+    typeof(NotificationPushBehaviour<,>));
+
 builder.Services.AddTransient(
     typeof(IPipelineBehavior<,>),
     typeof(ValidationBehaviour<,>));
@@ -641,6 +656,25 @@ builder.Services
 
                 ClockSkew = TimeSpan.Zero
             };
+
+        // Browsers cannot set an Authorization header on a WebSocket, so the
+        // SignalR client sends the token as ?access_token=. Accept it on the
+        // hub paths only; every other route still requires the header.
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+
+                if (!string.IsNullOrEmpty(accessToken) &&
+                    context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
     });
 
 
@@ -814,6 +848,28 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+// ========================================
+// Optional: apply EF migrations on startup
+// ========================================
+// Off by default. Containers set Database__MigrateOnStartup=true so a deploy
+// brings the schema up to date before seeders and jobs touch it. Run a single
+// API instance while a migration is pending.
+if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+{
+    using var migrateScope = app.Services.CreateScope();
+    var migrateDbContext =
+        migrateScope.ServiceProvider
+            .GetRequiredService<ApplicationDbContext>();
+
+    var pending = migrateDbContext.Database.GetPendingMigrations().ToList();
+
+    if (pending.Count > 0)
+    {
+        Log.Information("Applying {Count} pending migration(s): {Migrations}", pending.Count, pending);
+        migrateDbContext.Database.Migrate();
+    }
+}
+
 
 // ========================================
 // Hangfire
@@ -946,6 +1002,33 @@ if (!string.IsNullOrWhiteSpace(bootstrapAdminEmail) &&
 }
 
 // ========================================
+// Service catalogue starter data
+// ========================================
+// Seeds common UAE PRO services once, when the catalogue is empty. Skipped
+// while migrations are pending (a host booted before `database update`, and
+// test hosts, never touch a missing schema) or when
+// Seeding:ServiceCatalogue=false.
+if (app.Configuration.GetValue<bool?>("Seeding:ServiceCatalogue") != false)
+{
+    using var catalogueScope = app.Services.CreateScope();
+    var catalogueDbContext =
+        catalogueScope.ServiceProvider
+            .GetRequiredService<ApplicationDbContext>();
+
+    if (!catalogueDbContext.Database.GetPendingMigrations().Any())
+    {
+        var seededServices = ServiceCatalogueSeeder.Seed(catalogueDbContext);
+
+        if (seededServices > 0)
+        {
+            Log.Information(
+                "Service catalogue seeded with {Count} starter services. Set their fees in Admin > Services.",
+                seededServices);
+        }
+    }
+}
+
+// ========================================
 // Serilog request logging
 // ========================================
 
@@ -964,6 +1047,34 @@ if (app.Environment.IsDevelopment())
 // ========================================
 // HTTP pipeline
 // ========================================
+
+// Behind a reverse proxy (nginx, a load balancer) the client IP and scheme
+// arrive in X-Forwarded-* headers. Without this every request appears to
+// come from the proxy, so the per-IP login rate limit would be shared by all
+// users. Enable only when the API is reachable through the proxy alone.
+if (app.Configuration.GetValue<bool>("ForwardedHeaders:Enabled"))
+{
+    var forwardedOptions = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    };
+    forwardedOptions.KnownIPNetworks.Clear();
+    forwardedOptions.KnownProxies.Clear();
+
+    // With several proxies in front (e.g. Azure Container Apps ingress ->
+    // nginx -> internal ingress) the last X-Forwarded-For entry is a proxy,
+    // not the client. The web container can instead pass the client address
+    // in a header of its own (nginx CLIENT_IP), named here.
+    var clientIpHeader =
+        app.Configuration["ForwardedHeaders:ClientIpHeader"];
+
+    if (!string.IsNullOrWhiteSpace(clientIpHeader))
+    {
+        forwardedOptions.ForwardedForHeaderName = clientIpHeader;
+    }
+
+    app.UseForwardedHeaders(forwardedOptions);
+}
 
 // Explicit routing guarantees endpoint metadata (including the auth
 // rate-limit policy) is resolved before the rate limiter runs.
