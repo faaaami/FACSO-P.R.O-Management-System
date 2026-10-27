@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Notifications;
 using PROManagementSystem.Domain.Entities;
 using PROManagementSystem.Domain.Enums;
 
@@ -329,7 +330,23 @@ public sealed class CompletePaymentFromWebhookCommandHandler
             request,
             now);
 
-        // 7. A payment on this order settled the invoice, so any other open
+        // 7. A receipt for the client and a heads-up for the admins. Saved in
+        //    this transaction and pushed only after it commits.
+        var paid = NotificationLabels.Money(capturedAmount, order.Currency);
+
+        await _userNotifier.NotifyClientContactsAsync(
+            order.ClientCompanyId,
+            "Payment received",
+            $"We received your payment of {paid} for invoice " +
+            $"{invoice.Number}. Thank you.",
+            cancellationToken);
+
+        await _userNotifier.NotifyAdminsAsync(
+            "Online payment received",
+            $"Invoice {invoice.Number} was paid online ({paid}).",
+            cancellationToken);
+
+        // 8. A payment on this order settled the invoice, so any other open
         //    checkout for it must stop being payable.
         foreach (var other in otherOpenOrders)
         {
@@ -454,6 +471,7 @@ public sealed class CompletePaymentFromWebhookCommandHandler
             return invoice is null
                 ? null
                 : new LockedInvoice(
+                    invoice.InvoiceNumber,
                     invoice.Status.ToString(),
                     invoice.Status == RetainerInvoiceStatus.Pending,
                     paidAt =>
@@ -477,6 +495,7 @@ public sealed class CompletePaymentFromWebhookCommandHandler
             return invoice is null
                 ? null
                 : new LockedInvoice(
+                    invoice.InvoiceNumber,
                     invoice.Status.ToString(),
                     invoice.Status == ServiceFeeInvoiceStatus.Pending,
                     paidAt =>
@@ -551,14 +570,18 @@ public sealed class CompletePaymentFromWebhookCommandHandler
         private readonly Action<DateTime> _markPaid;
 
         public LockedInvoice(
+            string number,
             string status,
             bool isPending,
             Action<DateTime> markPaid)
         {
+            Number = number;
             Status = status;
             IsPending = isPending;
             _markPaid = markPaid;
         }
+
+        public string Number { get; }
 
         public string Status { get; }
 

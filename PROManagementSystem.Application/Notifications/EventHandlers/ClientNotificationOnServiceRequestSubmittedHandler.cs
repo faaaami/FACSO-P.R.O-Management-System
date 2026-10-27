@@ -45,14 +45,17 @@ public sealed class ClientNotificationOnServiceRequestSubmittedHandler
         var userId = _currentUser.UserId.Value;
         var now = DateTime.UtcNow;
 
+        var details = await ServiceRequestNotificationText.DescribeAsync(
+            _context, notification, cancellationToken);
+
         var clientNotification = new Notification
         {
             Id = Guid.NewGuid(),
             UserId = userId,
             Title = "Service request submitted",
             Message =
-                $"ServiceRequestSubmitted | ServiceRequestId:{notification.ServiceRequestId} | " +
-                $"Type: {notification.Type}.",
+                $"Your request for {details.Subject} was sent to the PRO team. " +
+                "We will let you know when it is accepted.",
             IsRead = false,
             ReadAt = null,
             CreatedAt = now,

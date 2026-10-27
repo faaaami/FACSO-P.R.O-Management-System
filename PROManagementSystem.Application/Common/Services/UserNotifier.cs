@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using PROManagementSystem.Application.Common.Interfaces;
 using PROManagementSystem.Application.Common.Realtime;
 using PROManagementSystem.Domain.Entities;
@@ -7,20 +6,23 @@ using PROManagementSystem.Domain.Enums;
 
 namespace PROManagementSystem.Application.Common.Services;
 
+/// <summary>
+/// Saves notification rows in the caller's unit of work and queues the
+/// realtime push. The push is sent by <c>NotificationPushBehaviour</c> after
+/// the request completes, so it can never announce a notification that a
+/// rolled-back transaction discards.
+/// </summary>
 public sealed class UserNotifier : IUserNotifier
 {
     private readonly IApplicationDbContext _context;
-    private readonly IRealtimeNotificationService _realtime;
-    private readonly ILogger<UserNotifier> _logger;
+    private readonly IPendingNotificationPushQueue _pendingPushes;
 
     public UserNotifier(
         IApplicationDbContext context,
-        IRealtimeNotificationService realtime,
-        ILogger<UserNotifier> logger)
+        IPendingNotificationPushQueue pendingPushes)
     {
         _context = context;
-        _realtime = realtime;
-        _logger = logger;
+        _pendingPushes = pendingPushes;
     }
 
     public async Task NotifyAdminsAsync(
@@ -79,24 +81,14 @@ public sealed class UserNotifier : IUserNotifier
 
         foreach (var notification in created)
         {
-            try
-            {
-                await _realtime.SendNotificationReceivedAsync(
-                    notification.UserId,
-                    new NotificationReceivedDto(
-                        notification.Id,
-                        notification.Title,
-                        notification.Message,
-                        notification.IsRead,
-                        notification.CreatedAt),
-                    cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                // The notification row is saved; a failed push only delays it
-                // until the next refresh, so it must not fail the request.
-                _logger.LogWarning(ex, "Realtime push failed for notification {NotificationId}.", notification.Id);
-            }
+            _pendingPushes.Enqueue(
+                notification.UserId,
+                new NotificationReceivedDto(
+                    notification.Id,
+                    notification.Title,
+                    notification.Message,
+                    notification.IsRead,
+                    notification.CreatedAt));
         }
     }
 }

@@ -56,6 +56,9 @@ public sealed class AdminNotificationOnServiceRequestSubmittedHandler
 
         var now = DateTime.UtcNow;
 
+        var details = await ServiceRequestNotificationText.DescribeAsync(
+            _context, notification, cancellationToken);
+
         var createdNotifications =
             new List<Notification>(adminUsers.Count);
 
@@ -67,9 +70,8 @@ public sealed class AdminNotificationOnServiceRequestSubmittedHandler
                 UserId = adminUser.Id,
                 Title = "New service request",
                 Message =
-                    $"ServiceRequestSubmitted | ServiceRequestId:{notification.ServiceRequestId} | " +
-                    $"ClientCompanyId:{notification.ClientCompanyId} | " +
-                    $"Type: {notification.Type}.",
+                    $"{details.CompanyName} requested {details.Subject}. " +
+                    "Review it in Service requests.",
                 IsRead = false,
                 ReadAt = null,
                 CreatedAt = now,

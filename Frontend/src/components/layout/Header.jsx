@@ -10,10 +10,12 @@ import {
   User as UserIcon,
 } from 'lucide-react'
 import { useAuth } from '../../auth/AuthContext'
+import { useNotificationUnreadCount } from '../../hooks/useNotificationUnreadCount'
 import GlobalSearch from './GlobalSearch'
 
 function Header({ onOpenMobileMenu, isMobileMenuOpen = false, mobileMenuId }) {
   const { user, logout } = useAuth()
+  const { data: unreadCount = 0 } = useNotificationUnreadCount()
   const navigate = useNavigate()
   const location = useLocation()
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
@@ -80,11 +82,22 @@ function Header({ onOpenMobileMenu, isMobileMenuOpen = false, mobileMenuId }) {
         {/* Notifications */}
         <Link
           to="/notifications"
-          aria-label="View notifications"
+          aria-label={
+            unreadCount > 0
+              ? `View notifications, ${unreadCount} unread`
+              : 'View notifications'
+          }
           className="relative rounded-[8px] p-2 text-[#6B7280] hover:bg-gray-100 hover:text-[#16181D] focus:outline-none focus:ring-2 focus:ring-[#0F9D74] transition duration-150"
         >
           <Bell className="h-5 w-5" />
-          <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-[#0F9D74] ring-2 ring-white" />
+          {unreadCount > 0 && (
+            <span
+              aria-hidden="true"
+              className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#0F9D74] text-white text-[11px] font-semibold leading-[18px] text-center ring-2 ring-white"
+            >
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
         </Link>
 
         {/* Divider */}

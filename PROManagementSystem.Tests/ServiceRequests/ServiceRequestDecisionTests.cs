@@ -861,9 +861,11 @@ public class ServiceRequestDecisionTests : IntegrationTestBase
 
         var adminNotifications = await NotificationsForAsync(Admin);
 
+        // Plain language for the admin: who asked for what, never raw ids.
         Assert.Contains(adminNotifications, n =>
             n.Title == "New service request" &&
-            n.Message.Contains("ServiceRequestSubmitted"));
+            n.Message.Contains(" requested ") &&
+            !n.Message.Contains("Id:"));
     }
 
     [Fact(DisplayName =

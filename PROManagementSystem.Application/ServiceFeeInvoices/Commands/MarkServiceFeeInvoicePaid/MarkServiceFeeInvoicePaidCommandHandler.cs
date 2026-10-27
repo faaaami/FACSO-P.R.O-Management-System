@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Exceptions;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Notifications;
 using PROManagementSystem.Domain.Entities;
 using PROManagementSystem.Application.PaymentOrders;
 using PROManagementSystem.Domain.Enums;
@@ -15,13 +16,16 @@ public sealed class MarkServiceFeeInvoicePaidCommandHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly IUserNotifier _notifier;
 
     public MarkServiceFeeInvoicePaidCommandHandler(
         IApplicationDbContext context,
-        ICurrentUserService currentUser)
+        ICurrentUserService currentUser,
+        IUserNotifier notifier)
     {
         _context = context;
         _currentUser = currentUser;
+        _notifier = notifier;
     }
 
     public async Task<MarkServiceFeeInvoicePaidResponseDto> Handle(
@@ -125,7 +129,17 @@ public sealed class MarkServiceFeeInvoicePaidCommandHandler
                 DeletedAt = null
             });
 
-            // 8. Single atomic commit.
+            // 8. Tell the client the invoice is settled. Saved with the
+            //    settlement below and pushed only after the commit.
+            await _notifier.NotifyClientContactsAsync(
+                invoice.ClientCompanyId,
+                "Invoice paid",
+                $"Invoice {invoice.InvoiceNumber} " +
+                $"({NotificationLabels.Money(invoice.Amount, invoice.Currency)}) " +
+                "is marked as paid. Thank you.",
+                cancellationToken);
+
+            // 9. Single atomic commit.
             await _context.SaveChangesAsync(
                 cancellationToken);
 

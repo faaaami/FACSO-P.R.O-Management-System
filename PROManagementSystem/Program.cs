@@ -593,6 +593,12 @@ builder.Services.AddMediatR(
 builder.Services.AddValidatorsFromAssembly(
     typeof(LoginCommand).Assembly);
 
+// Outermost: realtime pushes queued by a request go out only after the whole
+// request (and its transaction) has completed.
+builder.Services.AddTransient(
+    typeof(IPipelineBehavior<,>),
+    typeof(NotificationPushBehaviour<,>));
+
 builder.Services.AddTransient(
     typeof(IPipelineBehavior<,>),
     typeof(ValidationBehaviour<,>));
@@ -650,6 +656,25 @@ builder.Services
 
                 ClockSkew = TimeSpan.Zero
             };
+
+        // Browsers cannot set an Authorization header on a WebSocket, so the
+        // SignalR client sends the token as ?access_token=. Accept it on the
+        // hub paths only; every other route still requires the header.
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+
+                if (!string.IsNullOrEmpty(accessToken) &&
+                    context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
     });
 
 

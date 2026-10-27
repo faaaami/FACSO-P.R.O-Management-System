@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Exceptions;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Notifications;
 using PROManagementSystem.Domain.Enums;
 
 namespace PROManagementSystem.Application.ServiceFeeInvoices.Commands.VoidServiceFeeInvoice;
@@ -24,13 +25,16 @@ public sealed class VoidServiceFeeInvoiceCommandHandler
 
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly IUserNotifier _notifier;
 
     public VoidServiceFeeInvoiceCommandHandler(
         IApplicationDbContext context,
-        ICurrentUserService currentUser)
+        ICurrentUserService currentUser,
+        IUserNotifier notifier)
     {
         _context = context;
         _currentUser = currentUser;
+        _notifier = notifier;
     }
 
     public async Task<VoidServiceFeeInvoiceResponseDto> Handle(
@@ -165,7 +169,17 @@ public sealed class VoidServiceFeeInvoiceCommandHandler
 
             _context.AuditLogs.Add(auditLog);
 
-            // 8. Single atomic commit: the order is retired and the invoice
+            // 8. Tell the client the invoice no longer needs paying. Saved
+            //    with the void below and pushed only after the commit.
+            await _notifier.NotifyClientContactsAsync(
+                invoice.ClientCompanyId,
+                "Invoice cancelled",
+                $"Invoice {invoice.InvoiceNumber} " +
+                $"({NotificationLabels.Money(invoice.Amount, invoice.Currency)}) " +
+                "was cancelled and no longer needs to be paid.",
+                cancellationToken);
+
+            // 9. Single atomic commit: the order is retired and the invoice
             //    is voided together or not at all.
             await _context.SaveChangesAsync(cancellationToken);
 

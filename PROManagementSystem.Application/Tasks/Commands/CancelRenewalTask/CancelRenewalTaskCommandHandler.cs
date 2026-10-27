@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using PROManagementSystem.Application.Common.Exceptions;
 using PROManagementSystem.Application.Common.Interfaces;
+using PROManagementSystem.Application.Notifications;
 using PROManagementSystem.Domain.Entities;
 using PROManagementSystem.Domain.Enums;
 
@@ -14,13 +15,16 @@ public sealed class CancelRenewalTaskCommandHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly IUserNotifier _notifier;
 
     public CancelRenewalTaskCommandHandler(
         IApplicationDbContext context,
-        ICurrentUserService currentUser)
+        ICurrentUserService currentUser,
+        IUserNotifier notifier)
     {
         _context = context;
         _currentUser = currentUser;
+        _notifier = notifier;
     }
 
     public async Task<CancelRenewalTaskResponseDto> Handle(
@@ -85,6 +89,10 @@ public sealed class CancelRenewalTaskCommandHandler
                 .Select(x => x.DocumentNumber)
                 .FirstOrDefaultAsync(
                     cancellationToken);
+
+        // Named before the soft delete, while the task is still readable.
+        var label = await NotificationLabels.RenewalTaskAsync(
+            _context, task.Id, cancellationToken);
 
         // 4. Soft delete
         var now = DateTime.UtcNow;
@@ -155,11 +163,23 @@ public sealed class CancelRenewalTaskCommandHandler
         };
         _context.AuditLogs.Add(auditLog);
 
-        // 6. Save
+        // 6. The assigned agent stops working on it. The notifier saves the
+        //    cancellation and the notification in one write.
+        if (task.AssignedStaffId.HasValue &&
+            task.AssignedStaffId.Value != _currentUser.UserId.Value)
+        {
+            await _notifier.NotifyUsersAsync(
+                [task.AssignedStaffId.Value],
+                "Task cancelled",
+                $"{label} was cancelled. No further work is needed on it.",
+                cancellationToken);
+        }
+
+        // 7. Save
         await _context.SaveChangesAsync(
             cancellationToken);
 
-        // 7. Return response
+        // 8. Return response
         return new CancelRenewalTaskResponseDto(
             task.Id,
             task.IsDeleted,
